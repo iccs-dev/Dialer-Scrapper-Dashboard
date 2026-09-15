@@ -1,0 +1,25 @@
+# Keep the build context small and secrets out of the image.
+
+# Credentials: supplied at run time via env_file, never baked into a layer.
+.env
+.env.*
+!.env.example
+
+# Runtime data: bind-mounted, not copied. Media/ is 24 MB of agent records.
+Media/
+
+# Host virtualenv - the image installs its own.
+venv/
+.venv/
+
+# Generated
+__pycache__/
+*.py[cod]
+webapp/staticfiles/
+*.sqlite3
+*.log
+
+.git/
+.gitignore
+.idea/
+.vscode/

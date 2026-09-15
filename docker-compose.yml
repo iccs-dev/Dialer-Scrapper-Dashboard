@@ -1,0 +1,102 @@
+# Dialer Scrapper - dashboard, database and channel layer.
+#
+#     docker compose up -d --build          # start the dashboard
+#     docker compose run --rm scraper python Scrapper/Smart_Dial/Imagine/script.py 2026-09-14
+#     docker compose logs -f web
+#
+# Credentials come from .env on the host at run time; they are never copied
+# into the image (see .dockerignore).
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        # Media/ is bind-mounted, so the container user must match its owner
+        # or the scrapers' output arrives on the host owned by root.
+        UID: "${UID:-1000}"
+        GID: "${GID:-1000}"
+    image: dialer-scrapper:latest
+    env_file: .env
+    environment:
+      # These override .env, which is written for running directly on the host.
+      DB_ENGINE: postgres
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:-dialer_dashboard}"
+      DB_USER: "${DB_USER:-dialer}"
+      DB_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}"
+      # Redis makes the channel layer shared, which is what allows more than
+      # one worker - see gunicorn.conf.py.
+      CHANNEL_LAYER: redis
+      REDIS_HOST: redis
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-3}"
+      DJANGO_STATIC_ROOT: /app/webapp/staticfiles
+      DIALER_SCRAPPER_ROOT: /app
+    volumes:
+      # Scraper output and logs stay on the host, readable without docker.
+      - ./Media:/app/Media
+    ports:
+      # Loopback only. Nginx on the host is the front door, exactly as it is
+      # for the non-container deployment - deploy/nginx already proxies here.
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  # One-off runs: `docker compose run --rm scraper python <script> [date]`.
+  # Shares the image and the Media mount, but starts no server of its own.
+  scraper:
+    image: dialer-scrapper:latest
+    build:
+      context: .
+      args:
+        UID: "${UID:-1000}"
+        GID: "${GID:-1000}"
+    env_file: .env
+    environment:
+      DB_ENGINE: postgres
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:-dialer_dashboard}"
+      DB_USER: "${DB_USER:-dialer}"
+      DB_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}"
+      # Inside the network the dashboard is "web", not localhost. Without this
+      # every monitor callback would go to the scraper container itself.
+      MONITOR_API_URL: http://web:8001
+      DIALER_SCRAPPER_ROOT: /app
+    volumes:
+      - ./Media:/app/Media
+    depends_on:
+      - web
+    profiles: ["tools"]        # not started by `compose up`
+    restart: "no"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${DB_NAME:-dialer_dashboard}"
+      POSTGRES_USER: "${DB_USER:-dialer}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD in .env}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dialer} -d ${DB_NAME:-dialer_dashboard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

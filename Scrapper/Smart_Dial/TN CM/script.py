@@ -1,9 +1,13 @@
 """TN CM APR scraper - runs both legs and merges them.
 
-TN CM's agents sit under two dialer logins on one Smart Dial host:
+TN CM's agents sit under two dialer logins - two client codes on one Smart
+Dial host - so the report needs two scrapes:
 
-    a.py   client 2600, cmhelpline    ->  <date>_aAPR.csv
-    b.py   client 2700, tncmhelpline  ->  <date>_bAPR.csv
+    a.py   ->  <date>_aAPR.csv
+    b.py   ->  <date>_bAPR.csv
+
+Each leg's host, client code, user and password come from .env as
+SMART_DIAL_TN_CM_[A|B]_*; nothing is hardcoded here.
 
 The legs run one after the other, as in the original, and their minutes are
 summed per agent to produce the file combine.py picks up:

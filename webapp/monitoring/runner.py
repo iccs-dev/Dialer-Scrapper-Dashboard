@@ -91,7 +91,7 @@ def _notify(run, reason):
     _broadcast(run, reason=reason)
 
 
-def _run_one(process, run_date, date_args):
+def _run_one(process, run_date, date_args, extra_env=None):
     """Run the script once and return True when it produced its output file."""
     root = Path(settings.SCRAPER_ROOT)
     script = root / process.script_path
@@ -121,7 +121,7 @@ def _run_one(process, run_date, date_args):
         completed = subprocess.run(
             command, cwd=str(script.parent), capture_output=True, text=True,
             timeout=settings.RUN_TIMEOUT_SECONDS,
-            env={**os.environ, "DIALER_RUN_ID": run_id},
+            env={**os.environ, "DIALER_RUN_ID": run_id, **(extra_env or {})},
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         for line in output.splitlines():
@@ -193,11 +193,11 @@ def _run_parallel(processes, run_date, date_args):
         thread.join()
 
 
-def _run_one_safely(process, run_date, date_args):
+def _run_one_safely(process, run_date, date_args, extra_env=None):
     """_run_one in a thread of its own: one failure must not stop the rest."""
     close_old_connections()
     try:
-        _run_one(process, run_date, date_args)
+        _run_one(process, run_date, date_args, extra_env=extra_env)
     except Exception:                       # pragma: no cover - defensive
         logger.exception("runner crashed on %s for %s", process.name, run_date)
     finally:
@@ -243,7 +243,17 @@ def _orchestrate(scrapers, workflow, dates, names, include_workflow):
                         "no combine.py roster entry, so nothing will reach "
                         "HRMS. Run: python manage.py seed_workflow")
             if combine_step is not None:
-                _run_one_safely(combine_step, run_date, [run_date.isoformat()])
+                # Without this, combine.py rebuilds the upload file from every
+                # process that has data for the date and re-sends all of it to
+                # HRMS - so running one process rewrote the other processes'
+                # daily logs and re-uploaded their agents. COMBINE_PROCESSES
+                # pins it to the selection, which is what the Run button means.
+                # The nightly run_scrapers.py path is untouched: it selects
+                # every scraper, so combine still sees them all.
+                scoped = {"COMBINE_PROCESSES": ",".join(p.name for p in scrapers)} \
+                    if scrapers else None
+                _run_one_safely(combine_step, run_date, [run_date.isoformat()],
+                                extra_env=scoped)
 
             # Any other workflow step picked by hand - an hrms.py re-run, for
             # instance - runs only when combine did not, because combine.py

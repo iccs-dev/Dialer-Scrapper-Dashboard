@@ -233,9 +233,15 @@ def run_hrms(reason):
         text=True,
         cwd=common.CODE_ROOT,
     )
+    # hrms.py writes its own [HRMS] block into the daily log of each process
+    # in the upload, and routes per-process lines to the process they name.
+    # Echoing its stdout here as COMBINE lines duplicated all of that AND
+    # bypassed that routing - which is how "Imagine: 25 agent(s)" ended up in
+    # DMI's and TN CM's logs. Keep it at debug: still on the console and in a
+    # LOG_LEVEL=DEBUG run, out of the daily log.
     for line in (result.stdout or "").splitlines():
         if line.strip():
-            log(f"  hrms.py: {line.strip()}")
+            ctx.detail(f"  hrms.py: {line.strip()}")
     if result.returncode != 0:
         log(f"hrms.py exited with code {result.returncode}", logging.WARNING)
     return result.stdout or ""

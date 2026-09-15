@@ -1,0 +1,79 @@
+# Dialer Scrapper - Python dependencies (Ubuntu / Python 3.12+)
+#
+#     python3 -m venv venv
+#     venv/bin/pip install -r requirements.txt
+#     venv/bin/playwright install chromium     # downloads the browser itself
+#
+# Lower bounds rather than pins: the Windows-era pins in
+# requirements.windows-original.txt are unbuildable on current Python, and
+# nothing here depends on an exact version.
+
+# --- Browser automation ---
+# Chromium is installed separately by `playwright install`, not by pip.
+playwright>=1.55.0
+
+# --- Data processing ---
+pandas>=2.3.3,<3.0
+numpy>=2.3.2
+
+# Excel engines: openpyxl reads/writes .xlsx, xlrd reads the legacy .xls the
+# dialers still serve.
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+# --- HTML parsing ---
+# Not imported directly: pandas.read_html needs them, and the Smart Dial
+# export is an HTML table served under an .xls name.
+lxml>=6.0.0
+beautifulsoup4>=4.13.3
+html5lib>=1.1
+
+# --- Networking / transfer ---
+# SFTP upload of the cleaned APR file.
+paramiko>=3.5.0
+
+# --- Configuration ---
+python-dotenv>=1.0.1
+
+# ---------------------------------------------------------------------------
+# Monitoring dashboard (webapp/)
+# ---------------------------------------------------------------------------
+# daphne must be installed and listed in INSTALLED_APPS ahead of staticfiles
+# even though Gunicorn is the server that actually runs.
+Django>=6.1,<7.0
+channels>=4.3.0
+daphne>=4.2.0
+
+# --- Dashboard production server ---
+# Gunicorn's default worker speaks WSGI and cannot carry a WebSocket, so an
+# ASGI worker class is required, not optional.
+gunicorn>=23.0.0
+uvicorn[standard]>=0.34.0
+uvicorn-worker>=0.3.0
+
+# Serves /static/ when Nginx is not in front of the app.
+whitenoise>=6.9.0
+
+# --- Dashboard backing services ---
+# Needed once DB_ENGINE=postgres and CHANNEL_LAYER=redis are switched on.
+psycopg[binary]>=3.2.0
+channels-redis>=4.2.0
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT listed
+# ---------------------------------------------------------------------------
+# selenium, webdriver-manager, screeninfo, pywin32:
+#   only Scrapper/Smart_Dial/Imagine/Imagine_Disposition.py still uses these.
+#   It is the one file not yet converted to Playwright and it also imports
+#   win32com, which does not exist on Linux, so it cannot run here either way.
+#   Installing them would drag a second browser stack into a Playwright-only
+#   project; convert that file instead.
+#
+# streamlit:
+#   dashboard.py is the superseded Streamlit UI, kept only because
+#   `manage.py seed_processes` reads its process roster - and that command
+#   stubs the streamlit module, so it is never imported for real.
+#
+# requests, invoke:
+#   no longer imported anywhere. monitor.py posts with urllib from the
+#   standard library precisely so the scrapers need no HTTP dependency.

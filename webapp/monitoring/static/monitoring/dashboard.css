@@ -1,0 +1,335 @@
+/* Palette. Light mode is sampled from the supplied reference design:
+     accent      #5b4dbe  (active nav pill, primary button)
+     accent deep #4c3db5
+     ground      lavender tint over white cards
+     surfaces    #ffffff / #f6f7fb / #f3f4f6  (cards, rail, input pills)
+
+   Three sampled values were darkened to reach WCAG AA for small text and are
+   marked below; everything else is the reference colour as measured.
+
+   Every colour is a token, including the ones that used to be written inline,
+   because dark mode has to repaint all of them - a single hardcoded #fff left
+   behind shows up as a white strip on a dark screen. */
+:root{
+  /* Status tints follow the reference: soft tinted fills with a saturated
+     badge colour of the same hue, so a cell and its icon read as one thing. */
+  --green-bg:#e7f8ef; --green-fg:#127f4b; --green-br:#a9e5c4; --green-solid:#16a34a;
+  --yellow-bg:#fdf5e0; --yellow-fg:#94680a; --yellow-br:#f3ce74; --yellow-solid:#f59e0b;
+  --red-bg:#fdecee;   --red-fg:#c62638;   --red-br:#f6bcc3;   --red-solid:#ef4444;
+  --head:#166bdb; --head-fg:#fff;                /* accent: buttons, tabs, links */
+  --thead-bg:#1b3a63;                            /* table header navy           */
+  --datecol:#1e3f6b; --datecol-fg:#fff;
+  --line:#e2eaf5; --muted:#637799; --ink:#17304f;
+  --bg:#eef4fb; --panel:#fff; --panel-2:#f5f9ff;
+  --label:#51658a;
+  --input-bg:#fff; --input-br:#d9e4f2;
+  --info-bg:#eaf2fe; --info-fg:#14539a; --info-br:#1a73e8;
+  --pending-bg:#eff3f9; --pending-fg:#566e91; --pending-br:#dde6f2;
+  --stale-bg:#fde3e6; --stale-fg:#a11b2c; --stale-br:#f2a8b2;
+  --row-line:#eef3fa; --code-bg:#eef4fb;
+  --logbox-bg:#0f1f36; --logbox-fg:#dbe7f5;
+  --shadow:rgba(23,48,79,.10);
+  --disabled:#93a6c0;
+  /* Dark navy rail, the reference's strongest signature. */
+  --side-bg:#12294b; --side-fg:#dce7f5; --side-muted:#8ea4c2;
+  --side-line:#1e3a60; --side-head:#17335a; --side-hover:#193760;
+  --side-active-bg:#166bdb; --side-active-fg:#fff;
+  --side-input-bg:#102b4d; --side-info-bg:#17335a; --side-info-fg:#bcd4f2;
+  color-scheme:light;
+}
+
+/* Dark mode. The status colours are rebuilt rather than dimmed: the light
+   pastels are near-white and would glow on a dark panel, so each one becomes
+   a deep tint with a light foreground, keeping the same green/yellow/red
+   meaning at similar contrast. */
+:root[data-theme="dark"]{
+  --green-bg:#123222; --green-fg:#6ee7a7; --green-br:#1e6b41;
+  --yellow-bg:#382c0e; --yellow-fg:#fbd34d; --yellow-br:#8a6d10;
+  --red-bg:#3a1a1e;   --red-fg:#fca5a5;   --red-br:#7f2d34;
+  --head:#2f6fb3; --head-fg:#f2f6fb; --datecol:#243044; --datecol-fg:#e6eaf0;
+  --line:#2a3546; --muted:#98a2b3; --ink:#e6eaf0;
+  --bg:#0f141b; --panel:#171f2b; --panel-2:#1e2836;
+  --label:#b6c0cf;
+  --input-bg:#131a24; --input-br:#354256;
+  --info-bg:#132338; --info-fg:#93c5fd; --info-br:#3b82f6;
+  --pending-bg:#1c2533; --pending-fg:#94a3b8; --pending-br:#2c3a4d;
+  --stale-bg:#42191c; --stale-fg:#fca5a5; --stale-br:#8b3036;
+  --row-line:#232f3f; --code-bg:#1e2836;
+  --logbox-bg:#0a0f16; --logbox-fg:#dbe3ec;
+  --shadow:rgba(0,0,0,.45);
+  --disabled:#4b5563;
+  /* New token names only. Each is set to the value dark already rendered, so
+     the dark palette is unchanged - it simply gains the same treatments. */
+  --green-solid:#2f9e63; --yellow-solid:#b8860b; --red-solid:#b4444c;
+  --thead-bg:#2f6fb3;
+  --side-bg:#171f2b; --side-fg:#e6eaf0; --side-muted:#98a2b3;
+  --side-line:#2a3546; --side-head:#1e2836; --side-hover:#232f3f;
+  --side-active-bg:#2f6fb3; --side-active-fg:#fff;
+  --side-input-bg:#131a24; --side-info-bg:#132338; --side-info-fg:#93c5fd;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;font-size:14px;
+     color:var(--ink);background:var(--bg)}
+h1{font-size:20px;margin:0}
+h2{font-size:16px;margin:0 0 12px}
+h3{font-size:14px;margin:18px 0 8px}
+h4{font-size:13px;margin:22px 0 6px;color:var(--label)}
+hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.muted{color:var(--muted);font-weight:400}
+.hidden{display:none !important}
+
+/* ---------- login ---------- */
+.login-body{display:flex;align-items:center;justify-content:center;height:100vh}
+.login-card{background:var(--panel);padding:28px 30px;border-radius:8px;width:340px;
+            box-shadow:0 6px 24px var(--shadow)}
+.login-card h1{font-size:18px}
+.login-card .sub{color:var(--muted);margin:6px 0 18px;font-size:13px}
+.login-card label{display:block;margin:10px 0 4px;font-size:12px;color:var(--label)}
+.login-card input{width:100%;padding:8px 10px;border:1px solid var(--input-br);
+                  border-radius:4px;background:var(--input-bg);color:var(--ink)}
+.login-card button{width:100%;margin-top:16px;padding:9px;background:var(--head);
+                   color:var(--head-fg);border:0;border-radius:4px;font-size:14px;cursor:pointer}
+.login-error{background:var(--red-bg);color:var(--red-fg);padding:8px 10px;
+             border-radius:4px;font-size:13px}
+
+/* ---------- layout ---------- */
+.app{display:flex;min-height:100vh}
+.sidebar{width:300px;flex:0 0 300px;background:var(--panel);border-right:1px solid var(--line);
+         padding:18px 16px;overflow-y:auto;height:100vh;position:sticky;top:0}
+.main{flex:1;padding:16px 22px;min-width:0}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;
+        padding-bottom:12px;border-bottom:1px solid var(--line)}
+.topbar-right{display:flex;align-items:center;gap:14px}
+
+/* connection pill (requirement 8) */
+.conn{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;letter-spacing:.4px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.dot.live{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+.dot.polling{background:#f59e0b}
+.dot.down{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2)}
+
+/* theme toggle */
+.theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;
+              background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+              border-radius:999px;cursor:pointer;font-size:12px;font-weight:600;
+              line-height:1;white-space:nowrap}
+.theme-toggle:hover{border-color:var(--head)}
+.theme-toggle .ticon{font-size:13px}
+
+/* ---------- sidebar controls ---------- */
+.block{margin-bottom:6px}
+.radio{display:block;margin:5px 0;cursor:pointer}
+.radio.strong{font-weight:600;margin:10px 0}
+.date-row{margin-top:8px}
+.date-row label{display:block;font-size:12px;color:var(--label);margin-bottom:3px}
+input[type=date]{width:100%;padding:6px 8px;border:1px solid var(--input-br);
+                 border-radius:4px;background:var(--input-bg);color:var(--ink)}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.info{margin-top:8px;font-size:12px;color:var(--info-fg);background:var(--info-bg);
+      border-left:3px solid var(--info-br);padding:6px 8px;border-radius:3px}
+.info.err{color:var(--red-fg);background:var(--red-bg);border-left-color:var(--red-br)}
+.info:empty{display:none}
+.cat{margin:6px 0;border:1px solid var(--line);border-radius:4px}
+.cat summary{padding:6px 8px;cursor:pointer;font-weight:600;font-size:13px;
+             background:var(--panel-2)}
+.proc{display:flex;align-items:center;gap:7px;padding:3px 10px;font-size:13px;cursor:pointer}
+.proc.unavailable{color:var(--disabled);cursor:not-allowed}
+button.primary{width:100%;padding:9px;background:var(--head);color:var(--head-fg);border:0;
+               border-radius:4px;font-size:14px;font-weight:600;cursor:pointer}
+button.primary:disabled{background:var(--disabled);cursor:not-allowed}
+button.secondary{padding:7px 14px;background:var(--panel);border:1px solid var(--input-br);
+                 border-radius:4px;cursor:pointer;color:var(--ink)}
+.logout{display:flex;align-items:center;justify-content:space-between}
+button.link{background:none;border:0;color:var(--head);cursor:pointer;text-decoration:underline}
+
+/* ---------- tabs ---------- */
+/* Every tab is the same control: identical size, shape, font and padding, its
+   own background, and a visible gap so they never read as one joined strip.
+   The selected one is filled with the dashboard accent. */
+.tabs{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
+.tab{padding:9px 18px;font-size:14px;font-weight:600;line-height:1;cursor:pointer;
+     color:var(--muted);background:var(--panel);border:1px solid var(--line);
+     border-radius:10px;white-space:nowrap;
+     transition:background .15s ease,color .15s ease,border-color .15s ease}
+.tab:hover{background:var(--panel-2);color:var(--ink);border-color:var(--input-br)}
+.tab.active{background:var(--head);color:var(--head-fg);border-color:var(--head);
+     box-shadow:0 2px 6px var(--shadow)}
+.tab.active:hover{background:var(--head);color:var(--head-fg);border-color:var(--head)}
+
+/* ---------- banners, tiles, metrics ---------- */
+.banner{padding:10px 12px;border-radius:4px;margin-bottom:14px;font-weight:500}
+.banner.info{background:var(--info-bg);color:var(--info-fg);border-left:4px solid var(--info-br)}
+.banner.run,.banner.warn{background:var(--yellow-bg);color:var(--yellow-fg);
+                         border-left:4px solid var(--yellow-br)}
+.banner.ok{background:var(--green-bg);color:var(--green-fg);border-left:4px solid var(--green-br)}
+.banner.bad{background:var(--red-bg);color:var(--red-fg);border-left:4px solid var(--red-br)}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.tile{padding:8px 10px;border-radius:4px;font-size:13px;border:1px solid transparent}
+.tile .tname{font-weight:600}
+.tile .tmeta{font-size:11px;opacity:.85;margin-top:2px}
+.tile.SUCCESS{background:var(--green-bg);color:var(--green-fg);border-color:var(--green-br)}
+.tile.FAILED{background:var(--red-bg);color:var(--red-fg);border-color:var(--red-br)}
+.tile.WARNING,.tile.RUNNING{background:var(--yellow-bg);color:var(--yellow-fg);border-color:var(--yellow-br)}
+.tile.NOT_RESPONDING{background:var(--stale-bg);color:var(--stale-fg);border-color:var(--stale-br)}
+.tile.PENDING{background:var(--pending-bg);color:var(--pending-fg);border-color:var(--pending-br)}
+
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:14px 0}
+.metric{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:10px 12px}
+.metric-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.metric-value{font-size:22px;font-weight:700;margin-top:2px}
+.metric-value.ok{color:var(--green-fg)} .metric-value.bad{color:var(--red-fg)}
+.metric-value.warn{color:var(--yellow-fg)}
+
+.logbox{background:var(--logbox-bg);color:var(--logbox-fg);padding:12px;border-radius:5px;
+        height:420px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;
+        font-size:12px;line-height:1.55;white-space:pre-wrap;margin:0;
+        border:1px solid var(--line)}
+.logbox .lv-ERROR{color:#fca5a5} .logbox .lv-WARN{color:#fcd34d}
+
+/* ---------- monitoring tables ---------- */
+.mon-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.mon-controls label{display:block;font-size:12px;color:var(--label);margin-bottom:3px}
+.legend{margin-left:auto;font-size:12px;color:var(--label)}
+.swatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin:0 4px 0 12px}
+.swatch.green{background:var(--green-bg);border:1px solid var(--green-br)}
+.swatch.yellow{background:var(--yellow-bg);border:1px solid var(--yellow-br)}
+.swatch.red{background:var(--red-bg);border:1px solid var(--red-br)}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+table.grid th{background:var(--thead-bg);color:var(--head-fg);font-size:12px;padding:6px 4px;
+              text-align:center;white-space:nowrap;position:sticky;top:0}
+table.grid td{padding:5px 4px;text-align:center;min-width:52px;border-bottom:1px solid var(--row-line)}
+td.datecell{background:var(--datecol);color:var(--datecol-fg);font-weight:700;white-space:nowrap}
+td.green{background:var(--green-bg);color:var(--green-fg);font-weight:700}
+td.yellow{background:var(--yellow-bg);color:var(--yellow-fg);font-weight:700}
+td.red{background:var(--red-bg);color:var(--red-fg)}
+/* Upload in flight: neither done nor missing, so neither green nor starred. */
+td.running{background:var(--info-bg);color:var(--info-fg);font-weight:700}
+td.pushed{background:var(--green-bg);color:var(--green-fg);font-weight:700}
+td.notpushed{background:var(--red-bg);color:var(--red-fg)}
+.caption{font-size:12px;color:var(--muted);margin:6px 0 0}
+code{background:var(--code-bg);padding:1px 4px;border-radius:3px}
+
+.view-date{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px}
+.view-date label{color:var(--label)}
+.view-date input{width:auto}
+.view-date select{padding:6px 8px;border:1px solid var(--input-br);border-radius:8px;
+  background:var(--input-bg);color:var(--ink);font-size:13px}
+
+/* ===========================================================================
+   Reference-design treatments.
+   Appended rather than edited into the rules above, so every original
+   selector, box model and dimension is still in force and these only repaint
+   on top. All colours come from tokens, so dark mode renders the same design
+   in its own palette.
+   =========================================================================== */
+
+/* ---------- dark navy rail ---------- */
+.sidebar{background:var(--side-bg);color:var(--side-fg);border-right-color:var(--side-line)}
+.sidebar h2,.sidebar h3{color:var(--side-fg)}
+.sidebar h2{display:flex;align-items:center;gap:9px}
+.sidebar h2::before{content:"\1F4CA";font-size:13px;width:26px;height:26px;flex:0 0 26px;
+  border-radius:7px;background:var(--head);display:inline-grid;place-items:center}
+.sidebar .muted{color:var(--side-muted)}
+.sidebar .radio,.sidebar label{color:var(--side-fg)}
+.sidebar hr{border-top-color:var(--side-line)}
+.sidebar .date-row label,.sidebar .login-card label{color:var(--side-muted)}
+.sidebar input[type=date]{background:var(--side-input-bg);color:var(--side-fg);
+  border-color:var(--side-line)}
+.sidebar .info{background:var(--side-info-bg);color:var(--side-info-fg);
+  border-left-color:var(--head)}
+.sidebar .info.err{background:var(--red-bg);color:var(--red-fg)}
+.sidebar .cat{border-color:var(--side-line);background:transparent}
+.sidebar .cat summary{background:var(--side-head);color:var(--side-fg)}
+.sidebar .proc{color:var(--side-fg);border-radius:6px}
+.sidebar .proc.unavailable{color:var(--side-muted)}
+.sidebar .proc:hover{background:var(--side-hover)}
+/* The reference highlights the selected process as a solid blue row. */
+.sidebar .proc:has(input:checked){background:var(--side-active-bg);color:var(--side-active-fg)}
+.sidebar input[type=checkbox],.sidebar input[type=radio]{accent-color:var(--head)}
+.sidebar button.link{color:var(--side-info-fg)}
+.sidebar button.primary{box-shadow:0 2px 8px var(--shadow)}
+
+/* ---------- header ---------- */
+.topbar h1{display:flex;align-items:center;gap:11px}
+.topbar h1::before{content:"\1F4CA";font-size:15px;width:32px;height:32px;flex:0 0 32px;
+  border-radius:9px;background:var(--head);display:inline-grid;place-items:center}
+/* Light / Dark reads as a segmented control; the active half is filled. */
+.theme-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;
+  background:var(--panel-2);border:1px solid var(--line)}
+.theme-seg button{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+  border:0;border-radius:999px;background:none;color:var(--muted);cursor:pointer;
+  font-size:12px;font-weight:600;line-height:1;white-space:nowrap}
+.theme-seg button.on{background:var(--head);color:var(--head-fg)}
+.conn{padding:5px 11px;border-radius:999px;background:var(--green-bg);color:var(--green-fg)}
+
+/* ---------- metric cards ---------- */
+.metric{position:relative;overflow:hidden;padding:12px 14px 12px 60px;
+  border-radius:12px;box-shadow:0 1px 3px var(--shadow)}
+.metric::before{position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
+  font-size:15px;color:#fff;font-weight:700}
+.metric::after{content:"";position:absolute;left:0;right:0;bottom:0;height:22px;
+  opacity:.5;border-radius:0 0 12px 12px}
+.metric.m-info{background:var(--info-bg);border-color:var(--info-br)}
+.metric.m-info::before{content:"\1F4C5";background:var(--head)}
+.metric.m-ok{background:var(--green-bg);border-color:var(--green-br)}
+.metric.m-ok::before{content:"\2713";background:var(--green-solid)}
+.metric.m-warn{background:var(--yellow-bg);border-color:var(--yellow-br)}
+.metric.m-warn::before{content:"\0021";background:var(--yellow-solid);color:#3a2a02}
+.metric.m-bad{background:var(--red-bg);border-color:var(--red-br)}
+.metric.m-bad::before{content:"\2715";background:var(--red-solid)}
+.metric.m-neutral{background:var(--pending-bg);border-color:var(--pending-br)}
+.metric.m-neutral::before{content:"\23F1";background:var(--disabled)}
+.metric-label{position:relative;z-index:1}
+.metric-value{position:relative;z-index:1}
+
+/* ---------- section headings ---------- */
+.tabpane h3,.tabpane h4{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.tabpane h3::before,.tabpane h4::before{content:"\1F4CB";font-size:11px;
+  width:22px;height:22px;flex:0 0 22px;border-radius:6px;background:var(--info-bg);
+  display:inline-grid;place-items:center}
+
+/* ---------- controls ---------- */
+button.secondary{background:var(--head);color:var(--head-fg);border-color:var(--head);
+  border-radius:8px;font-weight:600}
+button.primary{border-radius:8px}
+.mon-controls input[type=date]{border-radius:8px}
+.legend .swatch{border-radius:50%;width:11px;height:11px}
+.legend .swatch.green{background:var(--green-solid);border-color:var(--green-solid)}
+.legend .swatch.yellow{background:var(--yellow-solid);border-color:var(--yellow-solid)}
+.legend .swatch.red{background:var(--red-solid);border-color:var(--red-solid)}
+.swatch.running{background:var(--head);border-color:var(--head)}
+
+/* ---------- panels and tables ---------- */
+.tablewrap{border-radius:10px;box-shadow:0 1px 3px var(--shadow)}
+.tile{border-radius:9px}
+.banner{border-radius:9px}
+.logbox{border-radius:10px}
+
+/* ---------- multi-select dropdown (Monitoring > Process) ----------
+   A blue trigger matching the Refresh button, with a panel of checkboxes.
+   Anchored to its own wrapper so the panel floats over the tables instead of
+   pushing the controls row taller when it opens. */
+.msel{position:relative;display:inline-block}
+.msel-toggle{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.msel-caret{font-size:10px;opacity:.85}
+.msel-panel{position:absolute;z-index:30;top:calc(100% + 6px);left:0;min-width:250px;
+  max-width:320px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 8px 24px var(--shadow);overflow:hidden}
+.msel-actions{display:flex;gap:14px;padding:9px 12px;border-bottom:1px solid var(--line);
+  background:var(--panel-2)}
+.msel-actions .link{font-size:12px;font-weight:600;text-decoration:none}
+.msel-actions .link:hover{text-decoration:underline}
+.msel-list{max-height:320px;overflow-y:auto;padding:6px 0}
+.msel-group{padding:7px 12px 3px;font-size:11px;font-weight:700;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--muted)}
+.msel-item{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:13px;
+  cursor:pointer;color:var(--ink)}
+.msel-item:hover{background:var(--panel-2)}
+.msel-item.unavailable{color:var(--muted)}
+.msel-item input{accent-color:var(--head);margin:0}

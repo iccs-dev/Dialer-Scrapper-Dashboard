@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+# .env holds the dialer, HRMS, SMTP, SFTP and Django credentials plus the
+# monitoring API token. It must never be committed. .env.example carries the
+# same keys with the values stripped, so a fresh clone knows what to fill in.
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Scraped data and failure evidence
+# ---------------------------------------------------------------------------
+# Media/ is runtime output, not source: agent records (employee codes, worked
+# minutes), the HRMS upload files, daily logs, and the error screenshots and
+# Playwright traces written when a run fails. It is real personnel data and it
+# grows without bound - keep it on the machine, out of the repository.
+Media/
+
+# The OneXVoice agent-id to ATS-code mapping is personnel data too. It lives
+# under Media/ and is already covered, but it is named here so the reason is
+# on the record if that folder ever moves.
+ATSIDs.xlsx
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Django runtime
+# ---------------------------------------------------------------------------
+# The SQLite database is a local development store; Postgres is the target.
+*.sqlite3
+*.sqlite3-journal
+
+# collectstatic output - generated from monitoring/static/, never edited.
+webapp/staticfiles/
+
+# Local overrides some deployments add beside settings.py.
+webapp/dialer_dashboard/local_settings.py
+
+# ---------------------------------------------------------------------------
+# Logs and scratch
+# ---------------------------------------------------------------------------
+*.log
+*.pid
+*.sock
+celerybeat-schedule
+
+# ---------------------------------------------------------------------------
+# Browsers and editors
+# ---------------------------------------------------------------------------
+# Playwright downloads Chromium to ~/.cache/ms-playwright, but a repo-local
+# install ends up here.
+.cache/
+ms-playwright/
+
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

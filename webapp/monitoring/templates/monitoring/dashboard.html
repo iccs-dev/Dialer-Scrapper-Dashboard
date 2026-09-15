@@ -1,0 +1,304 @@
+<!doctype html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dialer Scraper Dashboard</title>
+  <link rel="stylesheet" href="{% static 'monitoring/dashboard.css' %}">
+  <script>
+    /* Applied before the first paint. Reading the stored theme from the
+       stylesheet or from dashboard.js would be too late: the page would paint
+       white first and then flip, which on a wall-mounted kiosk is a flash
+       every time the browser reloads. */
+    (function () {
+      try {
+        var saved = localStorage.getItem("dashboard-theme");
+        var dark = saved ? saved === "dark"
+          : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR (Streamlit st.sidebar) ============ -->
+  <aside class="sidebar">
+    <h2>Configuration</h2>
+
+    <section class="block">
+      <h3>Date Mode</h3>
+      <label class="radio"><input type="radio" name="date_mode" value="yesterday" checked> Yesterday (Default)</label>
+      <label class="radio"><input type="radio" name="date_mode" value="single"> Single Date</label>
+      <label class="radio"><input type="radio" name="date_mode" value="range"> Date Range</label>
+
+      <div id="single-date-row" class="date-row hidden">
+        <label for="single_date">Select Date</label>
+        <input type="date" id="single_date" value="{{ yesterday }}">
+      </div>
+      <div id="range-date-row" class="date-row hidden">
+        <div class="two-col">
+          <div><label for="start_date">Start Date</label><input type="date" id="start_date" value="{{ week_ago }}"></div>
+          <div><label for="end_date">End Date</label><input type="date" id="end_date" value="{{ yesterday }}"></div>
+        </div>
+      </div>
+      <div id="date-info" class="info"></div>
+    </section>
+
+    <hr>
+
+    <section class="block">
+      <h3>Processes <span class="muted">({{ active_count }} of {{ process_count }} available)</span></h3>
+      <label class="radio strong">
+        <input type="checkbox" id="select-all" checked> Select All / Deselect All
+      </label>
+
+      {% for category, items in categories %}
+      <details class="cat" open>
+        <summary>{{ category }} <span class="muted">({{ items|length }})</span></summary>
+        {% for p in items %}
+        <label class="proc {% if not p.is_active %}unavailable{% endif %}"
+               title="{% if p.is_active %}{{ p.script_path }}{% else %}script not present on this machine{% endif %}">
+          <input type="checkbox" class="proc-check" value="{{ p.name }}"
+                 {% if p.is_active %}checked{% else %}disabled{% endif %}>
+          <span>{{ p.name }}</span>
+        </label>
+        {% endfor %}
+      </details>
+      {% endfor %}
+    </section>
+
+    <hr>
+    <button id="run-btn" class="primary">Run Scraper</button>
+    <div id="run-msg" class="info"></div>
+
+    <hr>
+    <form method="post" action="/accounts/logout/" class="logout">
+      {% csrf_token %}
+      <span class="muted">{{ request.user.username }}</span>
+      <button type="submit" class="link">Sign out</button>
+    </form>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <header class="topbar">
+      <h1>Dialer Scraper Dashboard</h1>
+      <div class="topbar-right">
+        <div class="theme-seg" role="group" aria-label="Colour theme">
+          <button id="theme-light" type="button">&#9728; Light</button>
+          <button id="theme-dark" type="button">&#9790; Dark</button>
+        </div>
+        <div class="conn"><span id="conn-dot" class="dot polling"></span><span id="conn-text">CONNECTING</span></div>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="scraper">Scrapper Logs</button>
+      <button class="tab" data-tab="monitor">Scrapper + HRMS status</button>
+      <button class="tab" data-tab="apr-clean">APR Clean Status</button>
+      <button class="tab" data-tab="disposition">Disposition Status</button>
+    </nav>
+
+    <!-- ---------- SCRAPER TAB ---------- -->
+    <section id="tab-scraper" class="tabpane">
+      <div class="view-date">
+        <label for="view_date">Viewing status for</label>
+        <input type="date" id="view_date" value="{{ yesterday }}">
+        <label for="view_process">Process</label>
+        <select id="view_process">
+          <option value="">All processes</option>
+          {% for category, items in categories %}
+          <optgroup label="{{ category }}">
+            {% for p in items %}
+            <option value="{{ p.name }}">{{ p.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+        <span class="muted">&mdash; filter the logs below</span>
+      </div>
+      <div id="status-banner" class="banner info">Ready. Configure settings and click Run.</div>
+
+      <h3>Process Status</h3>
+      <div id="status-tiles" class="tiles"><div class="muted">Loading…</div></div>
+
+      <div class="metrics">
+        <div class="metric m-ok"><div class="metric-label">Success</div><div class="metric-value ok" id="m-success">0</div></div>
+        <div class="metric m-bad"><div class="metric-label">Failed</div><div class="metric-value bad" id="m-failed">0</div></div>
+        <div class="metric m-warn"><div class="metric-label">Warnings</div><div class="metric-value warn" id="m-warning">0</div></div>
+        <div class="metric m-neutral"><div class="metric-label">Pending</div><div class="metric-value" id="m-pending">0</div></div>
+        <div class="metric m-bad"><div class="metric-label">Not Responding</div><div class="metric-value bad" id="m-stale">0</div></div>
+      </div>
+
+      <h3>Logs</h3>
+      <pre id="logs" class="logbox">No logs yet. Click Run to start.</pre>
+    </section>
+
+    <!-- ---------- MONITORING TAB ---------- -->
+    <section id="tab-monitor" class="tabpane hidden">
+      <div class="mon-controls">
+        <div><label for="mon_start">From</label><input type="date" id="mon_start" value="{{ week_ago }}"></div>
+        <div><label for="mon_end">To</label><input type="date" id="mon_end" value="{{ yesterday }}"></div>
+        <button id="mon-refresh" class="secondary">Refresh</button>
+        <div>
+          <label for="mon-process-btn">Process</label>
+          <div class="msel" id="mon-process">
+            <button type="button" class="secondary msel-toggle" id="mon-process-btn"
+                    aria-expanded="false">
+              <span id="mon-process-label">Select Process</span>
+              <span class="msel-caret">&#9662;</span>
+            </button>
+            <div class="msel-panel hidden" id="mon-process-panel">
+              <div class="msel-actions">
+                <button type="button" class="link" id="mon-process-all">Select all</button>
+                <button type="button" class="link" id="mon-process-none">Clear</button>
+              </div>
+              <div class="msel-list">
+                {% for category, items in categories %}
+                <div class="msel-group">{{ category }}</div>
+                {% for p in items %}
+                <label class="msel-item {% if not p.is_active %}unavailable{% endif %}">
+                  <input type="checkbox" class="mon-proc" value="{{ p.name }}">
+                  <span>{{ p.name }}</span>
+                </label>
+                {% endfor %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="swatch green"></span> Pushed to HRMS
+          <span class="swatch yellow"></span> Scraped, not in HRMS <b>*</b>
+          <span class="swatch running"></span> Upload running
+          <span class="swatch red"></span> No data
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric m-info"><div class="metric-label">Dates</div><div class="metric-value" id="mm-dates">0</div></div>
+        <div class="metric m-ok"><div class="metric-label">Pushed to HRMS</div><div class="metric-value ok" id="mm-green">0</div></div>
+        <div class="metric m-warn"><div class="metric-label">Not in HRMS</div><div class="metric-value warn" id="mm-yellow">0</div></div>
+        <div class="metric m-bad"><div class="metric-label">No data</div><div class="metric-value bad" id="mm-red">0</div></div>
+      </div>
+
+      <h4>Scrape Status by Process</h4>
+      <div class="tablewrap"><table id="matrix" class="grid"></table></div>
+      <p class="caption"><code>N</code> = rows scraped and pushed to HRMS &nbsp;|&nbsp;
+         <code>N*</code> = scraped, but never reached HRMS &nbsp;|&nbsp; empty red = no data</p>
+
+      <h4>Combined Upload &amp; HRMS Status</h4>
+      <div class="tablewrap"><table id="uploads" class="grid"></table></div>
+
+      <h4>HRMS Push Status by Process</h4>
+      <div class="tablewrap"><table id="hrms" class="grid"></table></div>
+    </section>
+
+    <!-- ---------- APR CLEAN STATUS ---------- -->
+    <section id="tab-apr-clean" class="tabpane hidden" data-kind="apr_clean">
+      <div class="mon-controls">
+        <div><label for="apr-clean_start">From</label><input type="date" id="apr-clean_start" value="{{ week_ago }}"></div>
+        <div><label for="apr-clean_end">To</label><input type="date" id="apr-clean_end" value="{{ yesterday }}"></div>
+        <button id="apr-clean-refresh" class="secondary">Refresh</button>
+        <div>
+          <label for="apr-clean-process-btn">Process</label>
+          <div class="msel" id="apr-clean-process">
+            <button type="button" class="secondary msel-toggle" id="apr-clean-process-btn"
+                    aria-expanded="false">
+              <span id="apr-clean-process-label">Select Process</span>
+              <span class="msel-caret">&#9662;</span>
+            </button>
+            <div class="msel-panel hidden" id="apr-clean-process-panel">
+              <div class="msel-actions">
+                <button type="button" class="link" data-msel-all="apr-clean">Select all</button>
+                <button type="button" class="link" data-msel-none="apr-clean">Clear</button>
+              </div>
+              <div class="msel-list">
+                {% for category, items in categories %}
+                <div class="msel-group">{{ category }}</div>
+                {% for p in items %}
+                <label class="msel-item {% if not p.is_active %}unavailable{% endif %}">
+                  <input type="checkbox" class="apr-clean-proc" value="{{ p.name }}">
+                  <span>{{ p.name }}</span>
+                </label>
+                {% endfor %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric m-info"><div class="metric-label">Dates</div><div class="metric-value" id="apr-clean-dates">0</div></div>
+        <div class="metric m-ok"><div class="metric-label">Pushed to HRMS</div><div class="metric-value ok" id="apr-clean-pushed">0</div></div>
+        <div class="metric m-warn"><div class="metric-label">Not in HRMS</div><div class="metric-value warn" id="apr-clean-notpushed">0</div></div>
+        <div class="metric m-bad"><div class="metric-label">No Data</div><div class="metric-value bad" id="apr-clean-nodata">0</div></div>
+      </div>
+
+      <h4>APR Clean Status by Process</h4>
+      <div class="tablewrap"><table id="apr-clean-table" class="grid"></table></div>
+      <p class="caption" id="apr-clean-note"></p>
+    </section>
+
+    <!-- ---------- DISPOSITION STATUS ---------- -->
+    <section id="tab-disposition" class="tabpane hidden" data-kind="disposition">
+      <div class="mon-controls">
+        <div><label for="disposition_start">From</label><input type="date" id="disposition_start" value="{{ week_ago }}"></div>
+        <div><label for="disposition_end">To</label><input type="date" id="disposition_end" value="{{ yesterday }}"></div>
+        <button id="disposition-refresh" class="secondary">Refresh</button>
+        <div>
+          <label for="disposition-process-btn">Process</label>
+          <div class="msel" id="disposition-process">
+            <button type="button" class="secondary msel-toggle" id="disposition-process-btn"
+                    aria-expanded="false">
+              <span id="disposition-process-label">Select Process</span>
+              <span class="msel-caret">&#9662;</span>
+            </button>
+            <div class="msel-panel hidden" id="disposition-process-panel">
+              <div class="msel-actions">
+                <button type="button" class="link" data-msel-all="disposition">Select all</button>
+                <button type="button" class="link" data-msel-none="disposition">Clear</button>
+              </div>
+              <div class="msel-list">
+                {% for category, items in categories %}
+                <div class="msel-group">{{ category }}</div>
+                {% for p in items %}
+                <label class="msel-item {% if not p.is_active %}unavailable{% endif %}">
+                  <input type="checkbox" class="disposition-proc" value="{{ p.name }}">
+                  <span>{{ p.name }}</span>
+                </label>
+                {% endfor %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric m-info"><div class="metric-label">Dates</div><div class="metric-value" id="disposition-dates">0</div></div>
+        <div class="metric m-ok"><div class="metric-label">Pushed to HRMS</div><div class="metric-value ok" id="disposition-pushed">0</div></div>
+        <div class="metric m-warn"><div class="metric-label">Not in HRMS</div><div class="metric-value warn" id="disposition-notpushed">0</div></div>
+        <div class="metric m-bad"><div class="metric-label">No Data</div><div class="metric-value bad" id="disposition-nodata">0</div></div>
+      </div>
+
+      <h4>Disposition Status by Process</h4>
+      <div class="tablewrap"><table id="disposition-table" class="grid"></table></div>
+      <p class="caption" id="disposition-note"></p>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  window.DASHBOARD = { yesterday: "{{ yesterday }}", csrf: "{{ csrf_token }}" };
+</script>
+<script src="{% static 'monitoring/dashboard.js' %}"></script>
+</body>
+</html>

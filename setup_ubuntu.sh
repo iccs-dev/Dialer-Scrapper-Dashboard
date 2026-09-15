@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# One-shot setup for running Dialer Scrapper on Ubuntu.
-# Does not require root: if Chrome/Chromium is absent, Selenium Manager
-# downloads a private "Chrome for Testing" build into ~/.cache/selenium.
+# One-shot setup for running Dialer Scrapper on Ubuntu, from a fresh clone.
+#
+#     git clone <repo> && cd Dialer_Scrapper_Dashboard && ./setup_ubuntu.sh
+#
+# Needs no root: Playwright downloads its own Chromium into
+# ~/.cache/ms-playwright. Only the shared libraries that browser links against
+# may need apt, and the script says so if the launch check fails.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +32,22 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
     fi
 else
     echo "==> Reusing existing virtualenv at $VENV_DIR"
+fi
+
+echo "==> Checking configuration"
+if [ ! -f "$PROJECT_ROOT/.env" ]; then
+    if [ -f "$PROJECT_ROOT/.env.example" ]; then
+        cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
+        chmod 600 "$PROJECT_ROOT/.env"
+        NEEDS_CREDENTIALS=1
+        echo "   created .env from .env.example - credentials are blank"
+    else
+        echo "ERROR: neither .env nor .env.example is present." >&2
+        exit 1
+    fi
+else
+    NEEDS_CREDENTIALS=0
+    echo "   .env already present, leaving it alone"
 fi
 
 echo "==> Installing Python dependencies"
@@ -90,6 +110,32 @@ with sync_playwright() as pw:
     browser.close()
 PY
 
+echo "==> Preparing the monitoring dashboard"
+(
+  cd "$PROJECT_ROOT/webapp"
+  "$VENV_DIR/bin/python" manage.py migrate --no-input
+  # The roster comes from the existing process list; workflow steps are what
+  # let combine.py and hrms.py report in.
+  "$VENV_DIR/bin/python" manage.py seed_processes
+  "$VENV_DIR/bin/python" manage.py seed_workflow
+  "$VENV_DIR/bin/python" manage.py collectstatic --no-input >/dev/null
+  echo "   static files collected"
+)
+
+echo
+if [ "${NEEDS_CREDENTIALS:-0}" = "1" ]; then
+  echo "=============================================================="
+  echo " BEFORE ANYTHING WILL RUN: edit .env and fill in the blanks."
+  echo " Every blank value is a credential - dialer logins, HRMS, SMTP,"
+  echo " DJANGO_SECRET_KEY and MONITOR_API_TOKEN."
+  echo "=============================================================="
+  echo
+fi
+echo "Create a dashboard login (asks for a password):"
+echo "  cd webapp && $VENV_DIR/bin/python manage.py createsuperuser"
+echo
+echo "Start the dashboard on http://127.0.0.1:8001 :"
+echo "  cd webapp && $VENV_DIR/bin/gunicorn -c gunicorn.conf.py dialer_dashboard.asgi:application"
 echo
 echo "Setup complete. Run the scripts with:"
 echo "  $VENV_DIR/bin/python Scrapper/Smart_Dial/Imagine/script.py [YYYY-MM-DD]"

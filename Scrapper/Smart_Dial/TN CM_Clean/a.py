@@ -6,37 +6,31 @@ import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
 import paramiko  # <-- For SFTP upload
-import time
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-import common
-from core.errors import CentralErrorHandler
-from core.runlog import Stage, start_run
-
-common.load_env()
-
 if len(sys.argv) > 1:
-    _target_date = common.as_date(sys.argv[1])
+    _target_date = datetime.strptime(sys.argv[1], "%Y-%m-%d")
 else:
-    _target_date = common.as_date(datetime.today() - timedelta(days=1))
+    _target_date = datetime.today() - timedelta(days=1)
+
+
 # ------------------- Configuration ------------------- #
-# Previously hardcoded to D:\Rakshit\refactoring\Dialer_again. The process
-# name now comes from the folder this script lives in, and every path is built
-# from that process plus the report date.
-network_path = common.PROJECT_ROOT
+network_path = r"D:\Rakshit\refactoring\Dialer_again"
+log_dir = r"D:\Rakshit\refactoring\Dialer_again\LOGs\Clean_APR"
+os.makedirs(log_dir, exist_ok=True)
 
-# One structured, per-run log: Media/<process>/logs/YYYY/MM/DD/<ts>_<run_id>.log
-ctx = start_run(__file__, _target_date)
-paths = ctx.paths
-handler = CentralErrorHandler(ctx)
-log_file_path = ctx.log_path
-current_date = datetime.now().strftime(common.DATE_FORMAT)
-
+current_date = datetime.now().strftime("%Y-%m-%d")
+log_file_path = os.path.join(log_dir, f"{current_date}.log")
 
 # ------------------- Logging ------------------- #
 def log(message):
-    ctx.info(str(message).replace("\n", " "), stage=Stage.PROCESSING)
+    try:
+        with open(log_file_path, "a", encoding="utf-8") as f:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] {message}\n")
+        print(message)
+    except Exception as e:
+        print(f"Logging failed: {e}")
 
 # ------------------- Connect to Network Share ------------------- #
 # try:
@@ -47,48 +41,49 @@ def log(message):
 #     exit(1)
 
 # ------------------- Prepare Paths ------------------- #
-# yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-#############################
-
-
-# Accept optional date argument (YYYY-MM-DD format)
+d = _target_date.strftime("%Y-%m-%d")
+file_name = f"{d}_aAPR.xls"    
 
 
-d = paths.date_key
-# The raw folder holds the report as .csv rather than .xls.
-file_name = paths.report_name("csv")
-start_time = time.time()
 # ------------------- Set Specific Date ------------------- #
-# target_date = '2025-06-30'  # <-- change this date as needed (format: YYYY-MM-DD)
+# target_date = '2025-07-14'  # <-- change this date as needed (format: YYYY-MM-DD)
 # file_name = f"{target_date}_APR.xls"
 
-# Both folders are partitioned by report date and created on demand.
-source_dir = paths.dataset(common.FOLDER_APR_RAW)
-target_dir = paths.dataset(common.FOLDER_APR_CLEAN)
+source_dir = os.path.join(network_path, r"media\TN CM\APR_data")
+target_dir = os.path.join(network_path, r"media\TN CM_Clean\dialer_data")
 source_path = os.path.join(source_dir, file_name)
-csv_path = os.path.join(target_dir, file_name)
+target_path = os.path.join(target_dir, file_name)
 
 # ------------------- Copy File ------------------- #
 try:
     if os.path.exists(source_path):
-        shutil.copy2(source_path, csv_path)
-        log(f"Copied {os.path.basename(source_path)}")
-        ctx.detail(f"{ctx.relative(source_path)} -> {ctx.relative(csv_path)}")
+        shutil.copy2(source_path, target_path)
+        log(f"File copied successfully:\nFrom: {source_path}\nTo:   {target_path}")
     else:
-        ctx.fail(f"Source file does not exist: {ctx.relative(source_path)}")
+        log(f"Source file does not exist: {source_path}")
         exit(1)
 except Exception as e:
-    ctx.fail(f"File copy failed | Reason: {e}")
+    log(f"Error during file copy: {e}")
     exit(1)
 
-# ------------------- Verify the copied CSV ------------------- #
+# ------------------- Convert .xls (HTML) to .csv ------------------- #
 try:
-    df = pd.read_csv(csv_path)
-    log(f"Loaded {len(df)} rows")
+    df_list = pd.read_html(target_path)
+    df = df_list[0]
+    csv_path = target_path.replace(".xls", ".csv")
+    df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    log(f"Converted .xls to .csv:\n{csv_path}")
 except Exception as e:
-    ctx.fail(f"Could not read CSV | Reason: {e}")
+    log(f"Error during XLS to CSV conversion: {e}")
     exit(1)
+
+
+# ------------------- Delete .xls File ------------------- #
+try:
+    os.remove(target_path)
+    log(f"Deleted original .xls file: {target_path}")
+except Exception as e:
+    log(f"Error deleting .xls file: {e}")
 
 
 # ------------------
@@ -98,9 +93,9 @@ try:
     # updated_data = data.drop(index=range(0, 67))  # Drop rows 2-7 (index 1-6)
     # updated_data.to_csv(csv_path, index=False)
     data.to_csv(csv_path, index=False)
-    ctx.detail("Updated CSV saved")
+    print("Updated CSV saved successfully")
 except Exception as e:
-    ctx.fail(f"CSV processing failed | Reason: {e}")
+    print(f"Error processing the CSV file: {e}")
 
 def time_to_minutes(time_str):
     if isinstance(time_str, str):  # Check if the value is a string
@@ -143,7 +138,7 @@ try:
 
         # Overwrite the same file
         data.to_csv(csv_path, index=False)
-        log("Net Login added")
+        print(f"'Net Login' column added successfully, and changes were saved to the original file: {csv_path}")
 
         data = pd.read_csv(csv_path)
         total_row_index = data[data["Agent ID"].astype(str).str.contains('Total', case=False, na=False)].index
@@ -162,7 +157,7 @@ try:
         # Keep only rows where EmpCode follows the pattern "ATS" + digitspip
         # data = data[data['EmpCode'].str.match(r'^ATS\d+$', na=False)]
 
-        data['First Login'] = pd.to_datetime(data['First Login'], errors='coerce').dt.strftime('%d-%b-%y')
+        # data['First Login'] = pd.to_datetime(data['First Login'], errors='coerce').dt.strftime('%d-%b-%y')
         # data['Minutes'] = data['Minutes'].round().astype(int)
         data['Minutes'] = np.ceil(data['Minutes']).astype(int)
         # Overwrite the same file
@@ -174,14 +169,17 @@ try:
         # Drop the first column regardless of its name
         data.drop(data.columns[0], axis=1, inplace=True)
 
+        # Keep only the first 8 characters in the new first column
+        data.iloc[:, 0] = data.iloc[:, 0].astype(str).str[:8]
+
+
         # Save final cleaned CSV
         data.to_csv(csv_path, index=False)
-        log("Columns cleaned")
+        log("Dropped temporary columns, first column, and removed header. Final CSV saved.")
     else:
-        ctx.fail("Required columns ('Login Duration', 'Total Break Duration') "
-                 "are missing in the file")
+        print("Required columns ('Login Duration' and 'Total Break Duration') are missing in the file.")
 except Exception as e:
-    ctx.fail(f"CSV processing failed | Reason: {e}")
+    print(f"Error processing the CSV file: {e}")
 
 
 try:
@@ -189,18 +187,18 @@ try:
     final_df = pd.read_csv(csv_path, header=None)
 
     # Define XLSX path
-    xlsx_path = os.path.join(target_dir, paths.report_name("xlsx"))
+    xlsx_path = csv_path.replace(".csv", ".xlsx")
 
     # Save as Excel
     final_df.to_excel(xlsx_path, index=False, header=False)
-    log(f"XLSX created: {os.path.basename(xlsx_path)}")
+    log(f"Successfully converted CSV to XLSX:\n{xlsx_path}")
 
     # Delete the CSV file
     os.remove(csv_path)
-    ctx.detail(f"deleted {ctx.relative(csv_path)}")
+    log(f"Deleted temporary CSV file:\n{csv_path}")
 
 except Exception as e:
-    ctx.fail(f"XLSX conversion failed | Reason: {e}")
+    log(f"Error during CSV to XLSX conversion or deletion: {e}")
 
 
 
@@ -230,37 +228,30 @@ except Exception as e:
 # ------------------- Upload XLSX to Server via SFTP ------------------- #
 #import paramiko  # <-- For SFTP upload
 
-server_ip = os.getenv("APR_SFTP_HOST", "")
-username = os.getenv("APR_SFTP_USERNAME", "")
-password = os.getenv("APR_SFTP_PASSWORD", "")
-sftp_port = int(os.getenv("APR_SFTP_PORT", "22"))
-# The remote folder mirrors the local convention: <base>/<process>. Set
-# APR_SFTP_REMOTE_DIR to override the whole path.
-remote_base = os.getenv("APR_SFTP_REMOTE_BASE", "")
-remote_dir = os.getenv("APR_SFTP_REMOTE_DIR") or f"{remote_base.rstrip('/')}/{paths.process}"
+# server_ip = "172.20.122.231"
+# username = "iccsadmin"
+# password = "Xs0a0@bdpkgo"
+# remote_dir = "/home/iccsadmin/APR_Data/TN_CM/APR_Clean"
 
-try:
-    transport = paramiko.Transport((server_ip, sftp_port))
-    transport.connect(username=username, password=password)
-    sftp = paramiko.SFTPClient.from_transport(transport)
+# try:
+#     transport = paramiko.Transport((server_ip, 22))
+#     transport.connect(username=username, password=password)
+#     sftp = paramiko.SFTPClient.from_transport(transport)
 
-    try:
-        sftp.chdir(remote_dir)
-    except IOError:
-        ctx.fail(f"Remote directory does not exist: {remote_dir}")
-        sftp.close()
-        transport.close()
-        exit(1)
+#     try:
+#         sftp.chdir(remote_dir)
+#     except IOError:
+#         log(f"Remote directory doesn't exist: {remote_dir}")
+#         sftp.close()
+#         transport.close()
+#         exit(1)
 
-    remote_path = os.path.join(remote_dir, os.path.basename(xlsx_path)).replace('\\', '/')
-    sftp.put(xlsx_path, remote_path)
-    log(f"Uploaded {os.path.basename(remote_path)} to {server_ip}")
+#     remote_path = os.path.join(remote_dir, os.path.basename(xlsx_path)).replace('\\', '/')
+#     sftp.put(xlsx_path, remote_path)
+#     log(f"Uploaded file to server:\n{remote_path}")
 
-    sftp.close()
-    transport.close()
+#     sftp.close()
+#     transport.close()
 
-except Exception as e:
-    ctx.fail("SFTP upload failed")
-    ctx.fail(f"Reason: {e}")
-
-ctx.finish(status="completed")
+# except Exception as e:
+#     log(f"Failed to upload file to server: {e}")

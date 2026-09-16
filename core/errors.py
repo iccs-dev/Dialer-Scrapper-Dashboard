@@ -336,21 +336,43 @@ def capture_evidence(ctx, exc, page=None, session=None, stage=None, attempts=Non
 _ROW = "<tr><th align='left' style='padding:4px 10px;background:#f2f2f2;'>{}</th><td style='padding:4px 10px;'>{}</td></tr>"
 
 
+def _split_message(message):
+    """(what failed, what to do about it).
+
+    Exception messages in this project lead with the fact and follow with the
+    remedy. Shown as one paragraph that reads as a wall of text in an email,
+    so the first sentence becomes the error and the rest becomes guidance.
+    Splitting on ". " only before a capital keeps "ATSIDs.xlsx" intact.
+    """
+    text = " ".join(str(message).split())
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text, maxsplit=1)
+    headline = parts[0].strip()
+    advice = parts[1].strip() if len(parts) > 1 else ""
+    if len(advice) > 400:
+        advice = advice[:397].rstrip() + "..."
+    return headline, advice
+
+
 def render_alert_html(record):
     """The alert body. Credentials never reach this function."""
     def row(label, value):
         return _ROW.format(html.escape(label), html.escape(str(value if value else "-")))
 
-    # Deliberately just these four. Everything else the run captured - run id,
-    # category, page URL/title, origin, attempts, host and the paths to the
-    # log, screenshot and trace - is still recorded in error.json and named in
-    # the [ERROR] lines of the run log; it is only kept out of the email.
-    rows = "".join([
+    # Deliberately short. Everything else the run captured - run id, category,
+    # page URL/title, origin, attempts, host, the traceback, and the paths to
+    # the log, screenshot and trace - is still recorded in error.json and named
+    # in the [ERROR] lines of the run log; it is only kept out of the email.
+    # A traceback tells the reader which line raised, which is of no use to the
+    # person who has to decide what to do about a failed upload.
+    headline, advice = _split_message(record["exception_message"])
+    rows = [
         row("Process", record["process"]),
         row("Target Date", record["target_date"]),
         row("Stage", record["stage"]),
-        row("Error Message", f"{record['exception_type']}: {record['exception_message']}"),
-    ])
+        row("Error", f"{record['exception_type']}: {headline}"),
+    ]
+    if advice:
+        rows.append(row("What to do", advice))
 
     tried = record.get("locators_tried") or []
     tried_block = ""
@@ -360,23 +382,14 @@ def render_alert_html(record):
             "<h3 style='margin:18px 0 6px;font-size:14px;'>Locators tried "
             f"({len(tried)})</h3><ol style='margin:0 0 8px 18px;'>{items}</ol>"
         )
-    exact = html.escape(
-        f"{record['exception_type']}: {record['exception_message']}"
-    )
     return f"""
 <html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;color:#1a1a1a;">
   <div style="padding:10px 12px;border-left:4px solid #c62828;background:#ffebee;
               color:#b71c1c;font-weight:600;margin-bottom:14px;">
     Scraper failed: {html.escape(record['process'])} - {html.escape(record['target_date'])}
   </div>
-  <table style="border-collapse:collapse;border:1px solid #e0e0e0;">{rows}</table>
+  <table style="border-collapse:collapse;border:1px solid #e0e0e0;">{"".join(rows)}</table>
   {tried_block}
-  <h3 style="margin:18px 0 6px;font-size:14px;">Exact error</h3>
-  <pre style="background:#fff8e1;border:1px solid #ffe082;padding:10px;
-              font-size:12px;white-space:pre-wrap;">{exact}</pre>
-  <h3 style="margin:18px 0 6px;font-size:14px;">Traceback</h3>
-  <pre style="background:#fafafa;border:1px solid #e0e0e0;padding:10px;
-              font-size:11px;overflow-x:auto;">{html.escape(record['traceback'])}</pre>
 </body></html>
 """
 

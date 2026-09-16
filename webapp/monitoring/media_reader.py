@@ -43,20 +43,27 @@ def _dated(*parts, date_obj):
     return media_root().joinpath(*parts, *_date_parts(date_obj))
 
 
-def _row_count(path):
-    """Rows in a CSV/XLSX, 0 if absent, -1 if present but unreadable."""
+def _row_count(path, headerless=False):
+    """Rows in a CSV/XLSX, 0 if absent, -1 if present but unreadable.
+
+    `headerless` matters: the cleaned APR workbooks are written with
+    header=False, so reading them the default way spends the first agent row
+    on column names and every count comes out one short.
+    """
     import pandas as pd
 
     if not path.is_file():
         return None
+    header = None if headerless else "infer"
     try:
-        frame = pd.read_csv(path) if path.suffix == ".csv" else pd.read_excel(path)
+        frame = (pd.read_csv(path, header=header) if path.suffix == ".csv"
+                 else pd.read_excel(path, header=header))
         return len(frame)
     except Exception:
         return -1
 
 
-def scrape_row_count(process, date_obj):
+def scrape_row_count(process, date_obj, headerless=False):
     """Rows this process produced for the date. 0 = missing, -1 = unreadable.
 
     `process` is a monitoring.models.Process; output_dir/file_pattern come
@@ -76,7 +83,7 @@ def scrape_row_count(process, date_obj):
         candidates.append(primary.with_suffix(".csv"))
 
     for path in candidates:
-        count = _row_count(path)
+        count = _row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0
@@ -237,7 +244,7 @@ DATASET_LOG_FOLDERS = {
 }
 
 
-def dataset_row_count(process_name, date_obj, folder):
+def dataset_row_count(process_name, date_obj, folder, headerless=False):
     """Rows in <process>/<folder>/Y/M/D for the date. 0 = nothing, -1 = unreadable.
 
     The file name differs per dataset - "<date>_APR.xlsx" for APR_Clean,
@@ -258,7 +265,7 @@ def dataset_row_count(process_name, date_obj, folder):
         and entry.suffix.lower() in (".csv", ".xlsx", ".xls")
     )
     for path in candidates:
-        count = _row_count(path)
+        count = _row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0

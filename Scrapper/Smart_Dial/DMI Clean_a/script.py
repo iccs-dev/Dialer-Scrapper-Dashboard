@@ -26,4 +26,7 @@ if __name__ == "__main__":
     sys.exit(run_clean(__file__, SOURCE_PROCESS,
                        break_columns=BREAK_COLUMNS, leg="a",
                        # OneXVoice names these differently from Smart Dial.
-                       agent_column="Agent Id", login_column="Login"))
+                       agent_column="Agent Id", login_column="Login",
+                       # Same recovery the DMI_a scraper does: this export
+                       # leaves Login Duration at 00:00:00 for real sessions.
+                       logout_column="Logout"))

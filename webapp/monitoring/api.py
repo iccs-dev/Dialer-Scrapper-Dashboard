@@ -593,8 +593,12 @@ def dashboard_dataset(request):
         already = media_reader.already_processed(current)
         cells = {}
         for process in processes:
-            count = (media_reader.scrape_row_count(process, current) if by_roster
-                     else media_reader.dataset_row_count(process.name, current, folder))
+            # Cleaned APR workbooks are written headerless; counting them the
+            # default way loses the first agent every time.
+            count = (media_reader.scrape_row_count(process, current, headerless=True)
+                     if by_roster
+                     else media_reader.dataset_row_count(process.name, current, folder,
+                                                         headerless=(kind == "apr_clean")))
             # A cleaner's HRMS standing is the source process's, since that is
             # the workflow the cleaned file belongs to.
             log_process = (process.output_dir.split("/")[0] if by_roster

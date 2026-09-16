@@ -43,7 +43,7 @@ def time_to_minutes(value):
     return 0
 
 
-def _upload(ctx, path):
+def _upload(ctx, path, process):
     """SFTP the cleaned workbook, if the transfer is configured.
 
     Silently skipped when the settings are absent: a machine that only needs
@@ -57,8 +57,11 @@ def _upload(ctx, path):
         return
 
     base = os.getenv("APR_SFTP_REMOTE_BASE", "").rstrip("/")
+    # The source process, not the cleaner's own name: the remote tree is
+    # organised by the process the data belongs to, so "DMI Clean_a" would
+    # point at a directory that does not exist.
     remote_dir = os.getenv("APR_SFTP_REMOTE_DIR") or (
-        f"{base}/{ctx.paths.process}" if base else "")
+        f"{base}/{process}" if base else "")
     if not remote_dir:
         ctx.warn("APR_SFTP_REMOTE_BASE/DIR not set; upload skipped")
         return
@@ -88,7 +91,8 @@ def _upload(ctx, path):
 
 def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
               leg="", target_date=None, upload=True,
-              agent_column="Agent ID", login_column="First Login"):
+              agent_column="Agent ID", login_column="First Login",
+              logout_column=None):
     """Clean one process's APR export. Returns a process exit code."""
     started = time.time()
     if target_date is None:
@@ -137,6 +141,23 @@ def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
                 converted = data[column].apply(time_to_minutes)
                 data[f"{column} (minutes)"] = converted
                 minutes = minutes - converted
+            # OneXVoice reports Login Duration as 00:00:00 for a share of real
+            # sessions even though it records both Login and Logout. Taking the
+            # column at face value drops those agents, and the cleaned file then
+            # disagrees with the scraper's own output for the same day.
+            if logout_column and logout_column in data.columns:
+                span = ((pd.to_datetime(data[logout_column], errors="coerce")
+                         - pd.to_datetime(data[login_column], errors="coerce"))
+                        .dt.total_seconds() / 60)
+                recoverable = (minutes <= 0) & span.gt(0).fillna(False)
+                if recoverable.any():
+                    breaks = sum((data[c].apply(time_to_minutes) for c in break_columns),
+                                 start=pd.Series(0, index=data.index))
+                    minutes = minutes.mask(recoverable, span - breaks)
+                    ctx.warn(f"{tag}{int(recoverable.sum())} session(s) had no "
+                             "Login Duration; minutes taken from the Logout - "
+                             "Login span instead")
+
             data["Minutes"] = minutes
             data = data[data["Minutes"] != 0.0]
             data[agent_column] = data[agent_column].astype(str).str.strip()
@@ -172,7 +193,7 @@ def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
             ctx.set_records(scraped=len(data))
 
             if upload:
-                _upload(ctx, xlsx_path)
+                _upload(ctx, xlsx_path, source_process)
         except Exception as exc:
             handler.handle(exc, stage=Stage.PROCESSING)
             for stale in (csv_path,):

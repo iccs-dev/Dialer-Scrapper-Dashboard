@@ -147,10 +147,10 @@ except Exception as e:
     log(f"Error during CSV to XLSX conversion or deletion: {e}")
 
 # ------------------- Upload XLSX to Server via SFTP ------------------- #
-server_ip = "172.20.122.231"
-username = "iccsadmin"
-password = "Xs0a0@bdpkgo"
-remote_dir = "/home/iccsadmin/ishita/APR_Uploads_V2/media/dialer_watch/Amazon_Merchant"
+server_ip = os.getenv("APR_SFTP_HOST", "")
+username = os.getenv("APR_SFTP_USERNAME", "")
+password = os.getenv("APR_SFTP_PASSWORD", "")
+remote_dir = os.getenv("APR_SFTP_REMOTE_DIR", "")
 
 
 try:

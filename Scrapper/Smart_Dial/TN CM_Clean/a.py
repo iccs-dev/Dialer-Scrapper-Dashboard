@@ -228,10 +228,9 @@ except Exception as e:
 # ------------------- Upload XLSX to Server via SFTP ------------------- #
 #import paramiko  # <-- For SFTP upload
 
-# server_ip = "172.20.122.231"
-# username = "iccsadmin"
-# password = "Xs0a0@bdpkgo"
-# remote_dir = "/home/iccsadmin/APR_Data/TN_CM/APR_Clean"
+
+
+
 
 # try:
 #     transport = paramiko.Transport((server_ip, 22))

@@ -50,6 +50,7 @@ SCRAPER = "SCRAPER"
 COMBINE = "COMBINE"
 HRMS = "HRMS"
 DISPOSITION = "DISPOSITION"
+CLEANING = "CLEANING"
 
 #: The APR workflow, in order. Each stage gets a line in the summary block.
 WORKFLOW = (SCRAPER, COMBINE, HRMS)
@@ -59,11 +60,16 @@ WORKFLOW = (SCRAPER, COMBINE, HRMS)
 #: stages that would sit at NOT RUN forever.
 WORKFLOW_DISPOSITION = (DISPOSITION,)
 
+#: Cleaning is a single stage too, and belongs to the process whose export it
+#: rewrites rather than to the cleaner script.
+WORKFLOW_CLEAN = (CLEANING,)
+
 #: Log folder -> the workflow its summary block describes.
 WORKFLOW_BY_FOLDER = {
     common.FOLDER_APR_LOGS: WORKFLOW,
     common.FOLDER_LOGS: WORKFLOW,
     common.FOLDER_DISPOSITION_LOGS: WORKFLOW_DISPOSITION,
+    common.FOLDER_APR_CLEAN_LOGS: WORKFLOW_CLEAN,
 }
 
 #: Statuses a stage can hold.
@@ -73,7 +79,7 @@ SUCCESS = "SUCCESS"
 FAILED = "FAILED"
 TERMINAL = (SUCCESS, FAILED)
 
-_ALL_STAGES = WORKFLOW + WORKFLOW_DISPOSITION
+_ALL_STAGES = WORKFLOW + WORKFLOW_DISPOSITION + WORKFLOW_CLEAN
 _STATUS_LINE = re.compile(r"^(" + "|".join(_ALL_STAGES) + r")\s*:\s*(.+?)\s*$")
 
 #: How long a lock file may sit before it is treated as abandoned.

@@ -119,7 +119,7 @@ class RunContext:
     """Identity, log file and stage tracking for a single run."""
 
     def __init__(self, script_file, target_date, process=None, run_id=None,
-                 daily_processes=None):
+                 daily_processes=None, log_folder=None, workflow_stage=None):
         self.script_file = str(script_file)
         self.paths = common.process_paths(script_file, target_date, process=process)
         self.process = self.paths.process
@@ -146,7 +146,9 @@ class RunContext:
         #: 'script', 'cleaning_script', 'combine', 'hrms', 'run_scrapers'.
         self.script_name = Path(self.script_file).stem.lower()
         #: SCRAPER / COMBINE / HRMS / CLEANING, or None for the orchestrator.
-        self.workflow_stage = WORKFLOW_STAGE.get(self.script_name)
+        # A cleaner is named script.py like a scraper, so its stage and log
+        # folder cannot be inferred from the filename - the caller says.
+        self.workflow_stage = workflow_stage or WORKFLOW_STAGE.get(self.script_name)
         if self.workflow_stage is None and self.script_name.endswith("_disposition"):
             # Every process names its report file <Process>_Disposition.py, so
             # match the suffix rather than listing each one.
@@ -160,7 +162,7 @@ class RunContext:
         targets = daily_processes or [self.process]
         # script.py -> APR_Logs, <process>_Disposition.py -> Disposition_Logs.
         # Derived from the running script, never hardcoded per process.
-        self.log_folder = common.log_folder(self.script_file)
+        self.log_folder = log_folder or common.log_folder(self.script_file)
         self.daily = DailyLogGroup(targets if self.workflow_stage else [],
                                    self.target_date, folder=self.log_folder)
         self.log_path = self.daily.paths[0] if self.daily.paths else None
@@ -394,10 +396,12 @@ class RunContext:
                 f"run_id={self.run_id!r})")
 
 
-def start_run(script_file, target_date, process=None, daily_processes=None):
+def start_run(script_file, target_date, process=None, daily_processes=None,
+              log_folder=None, workflow_stage=None):
     """Create a RunContext and write the [START] banner."""
     ctx = RunContext(script_file, target_date, process=process,
-                     daily_processes=daily_processes)
+                     daily_processes=daily_processes,
+                     log_folder=log_folder, workflow_stage=workflow_stage)
     ctx.start()
     ctx.detail(f"script={Path(ctx.script_file).name} run_id={ctx.run_id} "
                f"target_date={ctx.date_key} log={ctx.log_path}")

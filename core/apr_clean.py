@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 import common
+from core import daily_log
 from core.errors import CentralErrorHandler
 from core.runlog import Stage, start_run
 
@@ -99,9 +100,15 @@ def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
         target_date = common.as_date(sys.argv[1]) if len(sys.argv) > 1 else \
             common.as_date(datetime.today() - timedelta(days=1))
 
-    # Logging and dashboard reporting use this script's own process name
-    # ("GOQII Clean"); the files live under the process it cleans ("GOQII").
-    ctx = start_run(script_file, target_date)
+    # The dashboard still reports this run under the cleaner's own name, but
+    # the daily log belongs to the process whose export is being cleaned:
+    # Media/<SourceProcess>/APR_Clean_logs/<Y>/<M>/<D>/. Keeping it beside the
+    # cleaned file means one place to look per process, rather than a log tree
+    # under every "<X> Clean" folder.
+    ctx = start_run(script_file, target_date,
+                    daily_processes=[source_process],
+                    log_folder=common.FOLDER_APR_CLEAN_LOGS,
+                    workflow_stage=daily_log.CLEANING)
     paths = common.ProcessPaths(source_process, target_date)
     handler = CentralErrorHandler(ctx)
     common.load_env()

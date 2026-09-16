@@ -43,6 +43,7 @@ FOLDER_LOGS = "Logs"
 #: Disposition run of the same process never share a file or a folder.
 FOLDER_APR_LOGS = "APR_Logs"
 FOLDER_DISPOSITION_LOGS = "Disposition_Logs"
+FOLDER_APR_CLEAN_LOGS = "APR_Clean_logs"
 FOLDER_APR_RAW = "APR_data"
 FOLDER_APR_CLEAN = "APR_Clean"
 FOLDER_CSV_COPY = "csv_data"
@@ -64,6 +65,7 @@ DATASET_FOLDERS = (
     FOLDER_LOGS,
     FOLDER_APR_LOGS,
     FOLDER_DISPOSITION_LOGS,
+    FOLDER_APR_CLEAN_LOGS,
     FOLDER_APR_RAW,
     FOLDER_APR_CLEAN,
     FOLDER_CSV_COPY,

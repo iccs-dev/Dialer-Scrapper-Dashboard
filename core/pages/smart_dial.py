@@ -22,9 +22,11 @@ the Analytics sidebar link (an icon-only ``<a>`` whose only label is
 empty title).
 """
 
+import io
 import re
 from pathlib import Path
 
+import common
 from core.browser import resolve
 from core.errors import (
     DownloadValidationError,
@@ -89,10 +91,19 @@ class SmartDialPage:
             self.ctx.detail(f"Login page loaded: {self.page.url}")
 
             fields = [
-                ("client code", "Enter Your Code", "#code", self.client_code),
                 ("user id", "Enter UserID", "#username", self.username),
                 ("password", "Enter Password", "#password", "***"),
             ]
+            # Not every Smart Dial instance is multi-tenant. The vKYC dialer
+            # logs in on username and password alone and renders no client-code
+            # field at all, so asking for one there fails the login on a field
+            # that was never going to exist.
+            if self.client_code:
+                fields.insert(0, ("client code", "Enter Your Code", "#code",
+                                  self.client_code))
+            else:
+                self.ctx.detail("No client code configured; logging in with "
+                                "user id and password only")
             values = {"client code": self.client_code, "user id": self.username,
                       "password": self.password}
             for label, placeholder, fallback_id, _shown in fields:
@@ -412,6 +423,9 @@ class SmartDialPage:
                 [
                     # Icon-only button with an empty title: the id is the label.
                     ("css #create-excel", lambda s: s.locator("#create-excel")),
+                    # disp_all.php - the Disposition Report variant some
+                    # tenants (GOQII) are on - numbers its toolbar buttons.
+                    ("css #create-excel-1", lambda s: s.locator("#create-excel-1")),
                     ("get_by_role(button, /excel|export/i)",
                      lambda s: s.get_by_role("button", name=re.compile("excel|export", re.I))),
                 ],
@@ -440,22 +454,33 @@ class SmartDialPage:
             return destination, suggested
 
     @staticmethod
-    def read_export(path):
+    def read_export(path, dtype=None):
         """Read an export whatever form the dialer served it in.
 
         This dialer is inconsistent: User Session returns an HTML table under
-        an .xls name, Disposition returns a real .xlsx. Sniffing the first
-        bytes beats trusting the extension.
+        an .xls name, Disposition returns a real .xlsx on most tenants and a
+        real .csv on GOQII. Sniffing the first bytes beats trusting the
+        extension, which is "disposition.csv" either way.
+
+        Pass ``dtype=str`` when the values matter as text - phone numbers and
+        agent ids must not be coerced into floats and come back as 9.1234e+09.
         """
         import pandas as pd
 
         path = Path(path)
         head = path.open("rb").read(8)
         if head[:2] == b"PK":                                   # zip => xlsx
-            return pd.read_excel(path)
+            return pd.read_excel(path, dtype=dtype)
         if head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":     # OLE2 => legacy xls
-            return pd.read_excel(path)
-        return pd.read_html(str(path))[0]                       # HTML table
+            return pd.read_excel(path, dtype=dtype)
+        # The Disposition CSV button serves real comma-separated text, not the
+        # HTML-table-named-.xls the Excel button serves. Decide on the first
+        # non-blank character rather than the name, which is "disposition.csv"
+        # either way.
+        text = path.read_text(encoding="utf-8", errors="replace").lstrip()
+        if text.startswith("<"):
+            return pd.read_html(str(path))[0]                   # HTML table
+        return pd.read_csv(io.StringIO(common.drop_empty_csv_rows(text)), dtype=dtype)
 
     def validate_download(self, path):
         """Confirm the file is a usable export for this report."""
@@ -517,6 +542,49 @@ class SmartDialDispositionPage(SmartDialPage):
     #: Confirmed against the live export (26 columns).
     REQUIRED_COLUMNS = ("Campaign", "Agent ID", "Disposition", "Date")
 
+    #: Report Style values to fall back through when the tenant's own default
+    #: exports nothing. The styles are NOT comparable across tenants - IRDAI
+    #: yields 69 columns on style 1 and 19 on style 2, DMI the reverse - so the
+    #: default is always tried first and only a genuinely empty export makes us
+    #: look further. GOQII needs this: on its default style 1 the dialer
+    #: answers the export 200 OK with a zero-byte body for every date, which is
+    #: indistinguishable from a day with no calls.
+    REPORT_STYLE_FALLBACKS = ("2", "3")
+
     def select_all_dispositions(self):
         with self.ctx.stage_scope(Stage.SCRAPING):
             return self.select_all("disp", "select disposition")
+
+    def report_style(self):
+        """The Report Style currently selected, or None on builds without one."""
+        select = self.frame.locator("#report-style")
+        return select.input_value() if select.count() else None
+
+    def next_report_style(self, tried):
+        """Switch to a Report Style not in *tried*. Returns it, or None.
+
+        None means there is nothing left to try - either this build has no
+        Report Style control, or every option has already been exported.
+        """
+        with self.ctx.stage_scope(Stage.SCRAPING):
+            select = self.frame.locator("#report-style")
+            if not select.count():
+                return None
+
+            options = select.locator("option").evaluate_all(
+                "options => options.map(o => ({value: o.value, text: o.text}))")
+            # The declared fallbacks first, then anything else this build
+            # offers, so an unfamiliar tenant is still exhausted rather than
+            # silently reported as empty.
+            order = [v for v in self.REPORT_STYLE_FALLBACKS] + \
+                    [o["value"] for o in options]
+            available = {o["value"]: o["text"] for o in options}
+
+            for value in order:
+                if value in tried or value not in available:
+                    continue
+                select.select_option(value)
+                self.ctx.detail(f"Report Style -> {value!r} "
+                                f"({available[value]})")
+                return value
+            return None

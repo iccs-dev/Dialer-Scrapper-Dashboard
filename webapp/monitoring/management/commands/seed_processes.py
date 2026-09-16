@@ -18,6 +18,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from monitoring.management.commands.seed_dispositions import SUPERSEDED
 from monitoring.models import Process, ScheduleType
 
 
@@ -41,8 +42,15 @@ class Command(BaseCommand):
             return
 
         root = Path(settings.PROJECT_ROOT)
-        created = updated = inactive = 0
+        created = updated = inactive = skipped = 0
         for name, info in meta.items():
+            # dashboard.py still lists the Disposition reports under folder
+            # names that never existed. seed_dispositions registers the real
+            # ones, so recreating these here would put every disposition in
+            # the sidebar twice - once live, once dead.
+            if name in SUPERSEDED:
+                skipped += 1
+                continue
             working_dir = self._relative(info["cwd"], root)
             script = root / working_dir / info["script"] if working_dir else None
             exists = bool(script and script.is_file())
@@ -68,7 +76,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f"roster: {len(meta)} processes | created {created} | updated {updated} "
-            f"| inactive (script missing) {inactive}"
+            f"| inactive (script missing) {inactive} "
+            f"| skipped (registered by seed_dispositions) {skipped}"
         ))
 
     @staticmethod

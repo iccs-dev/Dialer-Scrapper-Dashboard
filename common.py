@@ -18,6 +18,7 @@ browser dependency, so tooling such as hrms_monitor.py can import it anywhere.
 
 import datetime as _datetime
 import os
+import re
 
 # ==================== CONFIGURATION ====================
 # Every folder and file name the project uses is defined here and nowhere else,
@@ -42,7 +43,7 @@ FOLDER_LOGS = "Logs"
 #: Logs are split by the report a script produces, so an APR run and a
 #: Disposition run of the same process never share a file or a folder.
 FOLDER_APR_LOGS = "APR_Logs"
-FOLDER_DISPOSITION_LOGS = "Disposition_Logs"
+FOLDER_DISPOSITION_LOGS = "Disposition_logs"
 FOLDER_APR_CLEAN_LOGS = "APR_Clean_logs"
 FOLDER_APR_RAW = "APR_data"
 FOLDER_APR_CLEAN = "APR_Clean"
@@ -55,7 +56,7 @@ FOLDER_FAILED_AGENTS = "Failed_Agent_list"
 FOLDER_ERRORS = "errors"
 
 #: Disposition report output, mirroring the APR folders.
-FOLDER_DISPOSITION = "disposition_data"
+FOLDER_DISPOSITION = "Disposition_data"
 FOLDER_CLEAN_DISPOSITION = "Clean_disposition"
 FOLDER_CLEAN_DISPOSITION_DATA = "Clean_disposition_data"
 
@@ -310,3 +311,18 @@ def load_env():
     except ImportError:
         return False
     return load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
+#: A CSV row holding nothing but separators and quotes - no data of any kind.
+_BLANK_CSV_ROW = re.compile(r'^[\s,"\']*$')
+
+
+def drop_empty_csv_rows(text):
+    """Strip data-free lines from CSV text.
+
+    Some dialer exports end with a padding row of bare commas that carries one
+    field more than the header, and pandas rejects the whole file over a line
+    that says nothing. Only rows with no content at all are dropped, so a
+    genuinely ragged data row still fails loudly.
+    """
+    kept = [line for line in text.splitlines() if not _BLANK_CSV_ROW.match(line)]
+    return "\n".join(kept) + "\n"

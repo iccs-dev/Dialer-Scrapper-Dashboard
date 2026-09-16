@@ -43,24 +43,61 @@ def _dated(*parts, date_obj):
     return media_root().joinpath(*parts, *_date_parts(date_obj))
 
 
-def _row_count(path, headerless=False):
+#: (path, mtime_ns, size, headerless) -> row count. Counting means parsing the
+#: whole workbook, and the Disposition tab does it once per process per date -
+#: 4.5s for a week, and linearly worse over a 92-day range. A file's row count
+#: cannot change without the file changing, so the identity is part of the key
+#: and a rewritten export is never served from here.
+_COUNT_CACHE = {}
+
+#: Enough for a long range across every process, and bounded so a long-running
+#: server cannot grow it without limit.
+_COUNT_CACHE_MAX = 4096
+
+
+def row_count(path, headerless=False):
     """Rows in a CSV/XLSX, 0 if absent, -1 if present but unreadable.
 
     `headerless` matters: the cleaned APR workbooks are written with
     header=False, so reading them the default way spends the first agent row
     on column names and every count comes out one short.
     """
+    import io
+
     import pandas as pd
 
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
     if not path.is_file():
         return None
-    header = None if headerless else "infer"
+
+    key = (str(path), stat.st_mtime_ns, stat.st_size, headerless)
+    if key in _COUNT_CACHE:
+        return _COUNT_CACHE[key]
+
+    # 0, not "infer": read_excel rejects the string outright, so every workbook
+    # counted with a header used to come back unreadable. Only the CSV branch
+    # ever worked, which is why the dialer_data tabs never showed it.
+    header = None if headerless else 0
     try:
-        frame = (pd.read_csv(path, header=header) if path.suffix == ".csv"
-                 else pd.read_excel(path, header=header))
-        return len(frame)
+        if path.suffix == ".csv":
+            text = path.read_text(encoding="utf-8", errors="replace")
+            # Some exports end with a padding row of bare commas carrying one
+            # field more than the header; pandas rejects the file over it.
+            frame = pd.read_csv(io.StringIO(common.drop_empty_csv_rows(text)),
+                                header=header)
+        else:
+            frame = pd.read_excel(path, header=header)
+        count = len(frame)
     except Exception:
-        return -1
+        count = -1
+
+    if len(_COUNT_CACHE) >= _COUNT_CACHE_MAX:
+        _COUNT_CACHE.clear()
+    _COUNT_CACHE[key] = count
+    return count
 
 
 def scrape_row_count(process, date_obj, headerless=False):
@@ -80,7 +117,7 @@ def scrape_row_count(process, date_obj, headerless=False):
     if "*" in pattern:
         total, found = 0, False
         for path in sorted(folder.glob(pattern.format(date=date_str))):
-            count = _row_count(path, headerless=headerless)
+            count = row_count(path, headerless=headerless)
             if count is not None and count >= 0:
                 total += count
                 found = True
@@ -95,7 +132,7 @@ def scrape_row_count(process, date_obj, headerless=False):
         candidates.append(primary.with_suffix(".csv"))
 
     for path in candidates:
-        count = _row_count(path, headerless=headerless)
+        count = row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0
@@ -277,7 +314,7 @@ def dataset_row_count(process_name, date_obj, folder, headerless=False):
         and entry.suffix.lower() in (".csv", ".xlsx", ".xls")
     )
     for path in candidates:
-        count = _row_count(path, headerless=headerless)
+        count = row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0

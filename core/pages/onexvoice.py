@@ -12,7 +12,7 @@ Flow:
 """
 
 import re
-from datetime import date as date_cls
+from datetime import date as date_cls, datetime
 from pathlib import Path
 
 from core.browser import resolve
@@ -156,16 +156,14 @@ class OneXVoicePage:
             self.runner.run("open the date picker", opener.click,
                             stage=Stage.DATE_SELECTION)
 
-            # Two .daterangepicker elements exist; only one is on screen.
-            picker = self._live_picker()
-            calendar = picker.locator(".drp-calendar.left")
+            # Two .daterangepicker elements exist and only one is on screen,
+            # and which one that is changes as the control re-renders. Ask
+            # again at every step rather than holding on to the first answer.
+            self._reveal_calendars()
+            self._show_month(target)
 
-            calendar.locator(".monthselect").select_option(label=target.strftime("%b"))
-            calendar.locator(".yearselect").select_option(label=str(target.year))
-            self.page.wait_for_timeout(300)
-
-            # Re-locate between clicks: the picker re-renders after the first.
             for _ in range(2):
+                calendar = self._live_picker().locator(".drp-calendar.left")
                 day = calendar.locator(
                     f"td.available:not(.off):text-is('{target.day}')"
                 )
@@ -177,9 +175,87 @@ class OneXVoicePage:
                 day.first.click()
                 self.page.wait_for_timeout(400)
 
-            self._apply(picker)
+            self._apply(self._live_picker())
             shown = self.page.locator("#reportrange").inner_text().strip()
             self.ctx.step(f"{target.isoformat()} ({shown})", stage=Stage.DATE_SELECTION)
+
+    def _reveal_calendars(self):
+        """Show the calendars, which some builds hide behind "Custom Range".
+
+        With the ranges list enabled the picker opens on Today / Yesterday /
+        Last 7 Days and keeps both calendars hidden until a custom range is
+        asked for. Clicking a day before that silently targets an off-screen
+        cell. Builds without a ranges list are already showing the calendars
+        and are left alone.
+        """
+        picker = self._live_picker()
+        calendar = picker.locator(".drp-calendar.left")
+        if calendar.is_visible():
+            return
+
+        custom = picker.locator("li[data-range-key]").filter(
+            has_text=re.compile(r"custom", re.I))
+        if not custom.count():
+            raise UiChangedError(
+                "The date picker's calendars are hidden and it offers no "
+                "Custom Range entry to reveal them"
+            )
+        self.ctx.detail("Calendars hidden behind the ranges list; "
+                        "choosing Custom Range")
+        custom.first.click()
+        self.page.wait_for_timeout(500)
+        self._live_picker().locator(".drp-calendar.left").wait_for(
+            state="visible", timeout=10000)
+
+    def _show_month(self, target):
+        """Bring the left calendar to target's month and year.
+
+        Two builds of the same control: Agent Performance renders the month
+        and year as dropdowns (showDropdowns), while Disposition Analysis
+        renders a plain "Sep 2026" heading with prev/next arrows. Use the
+        dropdowns when they exist and step with the arrows when they do not,
+        rather than assuming either.
+        """
+        calendar = self._live_picker().locator(".drp-calendar.left")
+        month_select = calendar.locator(".monthselect")
+        if month_select.count():
+            month_select.select_option(label=target.strftime("%b"))
+            calendar.locator(".yearselect").select_option(label=str(target.year))
+            self.page.wait_for_timeout(300)
+            return
+
+        want = (target.year, target.month)
+        for _ in range(36):
+            picker = self._live_picker()
+            calendar = picker.locator(".drp-calendar.left")
+            heading = calendar.locator("th.month").inner_text().strip()
+            shown = self._parse_month_heading(heading)
+            if shown == want:
+                return
+            arrow = "prev" if shown > want else "next"
+            control = picker.locator(f"th.{arrow}.available")
+            if not control.count():
+                raise UiChangedError(
+                    f"Calendar is on {heading} and cannot step {arrow} "
+                    f"towards {target.strftime('%B %Y')}"
+                )
+            control.first.click()
+            self.page.wait_for_timeout(300)
+
+        raise UiChangedError(
+            f"Calendar would not reach {target.strftime('%B %Y')}"
+        )
+
+    @staticmethod
+    def _parse_month_heading(heading):
+        """'Sep 2026' or 'September 2026' -> (2026, 9)."""
+        for fmt in ("%b %Y", "%B %Y"):
+            try:
+                shown = datetime.strptime(heading, fmt)
+            except ValueError:
+                continue
+            return (shown.year, shown.month)
+        raise UiChangedError(f"Unreadable calendar heading: {heading!r}")
 
     def _live_picker(self):
         """The visible daterangepicker, not the stale hidden twin."""
@@ -247,20 +323,24 @@ class OneXVoicePage:
             return destination, suggested
 
     @staticmethod
-    def read_export(path):
-        """Read the export whatever form it was served in."""
+    def read_export(path, dtype=None):
+        """Read the export whatever form it was served in.
+
+        Pass ``dtype=str`` when the values matter as text - phone numbers and
+        agent ids must not be coerced into floats and come back as 9.1234e+09.
+        """
         import pandas as pd
 
         path = Path(path)
         head = path.open("rb").read(8)
         if head[:2] == b"PK":                                   # zip => xlsx
-            return pd.read_excel(path)
+            return pd.read_excel(path, dtype=dtype)
         if head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":     # OLE2 => legacy xls
-            return pd.read_excel(path)
+            return pd.read_excel(path, dtype=dtype)
         try:
             return pd.read_html(str(path))[0]                   # HTML table
         except ValueError:
-            return pd.read_csv(path)                            # plain CSV
+            return pd.read_csv(path, dtype=dtype)               # plain CSV
 
     def validate_download(self, path):
         """Confirm the file is a usable Agent Performance export."""
@@ -292,3 +372,32 @@ class OneXVoicePage:
             self.ctx.step(f"{len(frame)} rows | {len(frame.columns)} columns",
                           stage=Stage.VALIDATION)
             return frame
+
+
+class OneXVoiceDispositionPage(OneXVoicePage):
+    """The Performance -> Disposition Analysis page of a OneXVoice tenant.
+
+    This is what the vKYC dialer offers in place of Smart Dial's Disposition
+    Report, and it is not the same shape: Smart Dial lists one row per call,
+    while this lists one row per disposition combination with a count. The
+    dialer serves no per-call export carrying dispositions - Call Analysis is
+    a daily total and the Call Log grid does not export them - so this is the
+    disposition data available for this tenant.
+    """
+
+    REPORT_LABEL = "Disposition Analysis"
+
+    #: The three disposition levels. The count arrives in a fourth, unnamed
+    #: column, which read_export renames rather than requiring by name.
+    REQUIRED_COLUMNS = ("Level 1", "Level 2", "Level 3")
+
+    #: What the unnamed count column is called once read.
+    COUNT_COLUMN = "Count"
+
+    @classmethod
+    def read_export(cls, path, dtype=None):
+        """Read the export and give its unnamed count column a name."""
+        frame = OneXVoicePage.read_export(path, dtype=dtype)
+        renamed = {c: cls.COUNT_COLUMN for c in frame.columns
+                   if isinstance(c, str) and c.startswith("Unnamed:")}
+        return frame.rename(columns=renamed) if renamed else frame

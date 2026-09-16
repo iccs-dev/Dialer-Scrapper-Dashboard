@@ -32,6 +32,10 @@ from core.runlog import Stage, start_run
 #: Subtracted from Login Duration by most processes.
 TOTAL_BREAK = ("Total Break Duration",)
 
+#: Smart Dial exports lead with a row-number column that the cleaned file does
+#: not want. Other dialers do not have it.
+ROW_NUMBER_COLUMN = "##"
+
 
 def time_to_minutes(value):
     """'08:56:45' -> 536.75. Anything unparseable counts as zero."""
@@ -42,6 +46,38 @@ def time_to_minutes(value):
         except ValueError:
             return 0
     return 0
+
+
+def _map_agent_ids(ctx, column, mapping_env, tag=""):
+    """Translate dialer agent ids into ATS employee codes."""
+    relative = os.getenv(mapping_env, "")
+    if not relative:
+        ctx.warn(f"{tag}{mapping_env} is not set; agent ids left as the dialer "
+                 "reports them")
+        return column
+    path = os.path.join(common.PROJECT_ROOT, relative)
+    if not os.path.exists(path):
+        ctx.warn(f"{tag}Mapping file not found: {ctx.relative(path)}; agent ids "
+                 "left as the dialer reports them")
+        return column
+
+    table = pd.read_excel(path)
+    missing = [c for c in ("Agent Id", "ATS ID") if c not in table.columns]
+    if missing:
+        ctx.warn(f"{tag}{os.path.basename(path)} is missing {', '.join(missing)}; "
+                 "agent ids left unchanged")
+        return column
+    mapping = dict(zip(table["Agent Id"].astype(str).str.strip(),
+                       table["ATS ID"].astype(str).str.strip()))
+
+    # pandas reads the ids as floats, so "3367" arrives as "3367.0".
+    cleaned = column.astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    mapped = cleaned.map(mapping).fillna(cleaned)
+    unmapped = int((mapped == cleaned).sum())
+    if unmapped:
+        ctx.warn(f"{tag}{unmapped} agent id(s) had no ATS code in "
+                 f"{os.path.basename(path)}; left unchanged")
+    return mapped
 
 
 def _upload(ctx, path, process):
@@ -93,7 +129,7 @@ def _upload(ctx, path, process):
 def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
               leg="", target_date=None, upload=True,
               agent_column="Agent ID", login_column="First Login",
-              logout_column=None):
+              logout_column=None, id_mapping_env=None):
     """Clean one process's APR export. Returns a process exit code."""
     started = time.time()
     if target_date is None:
@@ -169,6 +205,14 @@ def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
             data = data[data["Minutes"] != 0.0]
             data[agent_column] = data[agent_column].astype(str).str.strip()
 
+            # OneXVoice identifies agents by its own number; the downstream
+            # consumer expects the ATS employee code, exactly as the scraper
+            # produces. Without this the cleaned file carries ids nobody
+            # downstream recognises.
+            if id_mapping_env:
+                data[agent_column] = _map_agent_ids(
+                    ctx, data[agent_column], id_mapping_env, tag)
+
             for column in ("##", agent_column):
                 if column in data.columns:
                     totals = data[data[column].astype(str)
@@ -190,7 +234,16 @@ def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
             drop = ["Login Duration (minutes)", "Minutes"] + \
                    [f"{c} (minutes)" for c in break_columns]
             data.drop(columns=drop, inplace=True, errors="ignore")
-            data.drop(data.columns[0], axis=1, inplace=True)
+
+            # The original dropped column 0 outright, which works only while
+            # that column is Smart Dial's "##" row number. The OneXVoice export
+            # behind DMI's leg a starts with Agent Id, so dropping blindly
+            # threw the agent identifier away and left names in its place.
+            # Drop the row-number column by name, or nothing.
+            if ROW_NUMBER_COLUMN in data.columns:
+                data.drop(columns=[ROW_NUMBER_COLUMN], inplace=True)
+            else:
+                ctx.detail(f"{tag}no {ROW_NUMBER_COLUMN!r} column; no column dropped")
 
             # Headerless, as the downstream system expects.
             data.to_excel(xlsx_path, index=False, header=False)

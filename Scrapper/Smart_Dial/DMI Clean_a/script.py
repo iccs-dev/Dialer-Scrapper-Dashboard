@@ -29,4 +29,6 @@ if __name__ == "__main__":
                        agent_column="Agent Id", login_column="Login",
                        # Same recovery the DMI_a scraper does: this export
                        # leaves Login Duration at 00:00:00 for real sessions.
-                       logout_column="Logout"))
+                       logout_column="Logout",
+                       # OneXVoice numbers its agents; downstream wants ATS codes.
+                       id_mapping_env="DMI_ATS_MAPPING"))

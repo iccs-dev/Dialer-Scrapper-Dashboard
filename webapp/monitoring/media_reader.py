@@ -74,6 +74,18 @@ def scrape_row_count(process, date_obj, headerless=False):
     pattern = process.file_pattern or "{date}_APR.csv"
     folder = _dated(*output_dir.split("/"), date_obj=date_obj)
 
+    # A pattern with a wildcard means the process writes more than one file
+    # for a date - TN CM's cleaner produces a leg each - and the count is the
+    # sum, not whichever one happened to be named in the roster.
+    if "*" in pattern:
+        total, found = 0, False
+        for path in sorted(folder.glob(pattern.format(date=date_str))):
+            count = _row_count(path, headerless=headerless)
+            if count is not None and count >= 0:
+                total += count
+                found = True
+        return total if found else 0
+
     primary = folder / pattern.format(date=date_str)
     # A CSV pattern may have an XLSX sibling and vice-versa, as before.
     candidates = [primary]

@@ -1,0 +1,185 @@
+"""Shared APR cleaning step, parameterised per process.
+
+Takes the raw export a scraper left in Media/<Process>/APR_data/<Y>/<M>/<D>/
+and writes the cleaned, headerless workbook the downstream system expects:
+
+    Media/<Process>/APR_Clean/<Y>/<M>/<D>/<date>_APR.xlsx
+
+The transformation is carried over unchanged from the original per-process
+scripts. What varies between them is only which columns are subtracted from
+Login Duration, and whether the process is split into a/b legs - both are
+arguments rather than seven copies of the same 200 lines.
+
+Output lands under the *source* process, not under the "<X> Clean" folder the
+old scripts used, so there is one APR_Clean location per process and the
+dashboard's APR Clean tab finds it.
+"""
+
+import os
+import shutil
+import sys
+import time
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
+import common
+from core.errors import CentralErrorHandler
+from core.runlog import Stage, start_run
+
+#: Subtracted from Login Duration by most processes.
+TOTAL_BREAK = ("Total Break Duration",)
+
+
+def time_to_minutes(value):
+    """'08:56:45' -> 536.75. Anything unparseable counts as zero."""
+    if isinstance(value, str):
+        try:
+            hours, minutes, seconds = map(int, value.split(":"))
+            return hours * 60 + minutes + seconds / 60
+        except ValueError:
+            return 0
+    return 0
+
+
+def _upload(ctx, path):
+    """SFTP the cleaned workbook, if the transfer is configured.
+
+    Silently skipped when the settings are absent: a machine that only needs
+    the local file should not fail the run over a missing upload target.
+    """
+    host = os.getenv("APR_SFTP_HOST", "")
+    user = os.getenv("APR_SFTP_USERNAME", "")
+    password = os.getenv("APR_SFTP_PASSWORD", "")
+    if not (host and user and password):
+        ctx.detail("APR_SFTP_* not configured; upload skipped")
+        return
+
+    base = os.getenv("APR_SFTP_REMOTE_BASE", "").rstrip("/")
+    remote_dir = os.getenv("APR_SFTP_REMOTE_DIR") or (
+        f"{base}/{ctx.paths.process}" if base else "")
+    if not remote_dir:
+        ctx.warn("APR_SFTP_REMOTE_BASE/DIR not set; upload skipped")
+        return
+
+    import paramiko
+    transport = None
+    try:
+        transport = paramiko.Transport((host, int(os.getenv("APR_SFTP_PORT", "22"))))
+        transport.connect(username=user, password=password)
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            sftp.chdir(remote_dir)
+        except IOError:
+            ctx.warn(f"Remote directory does not exist: {remote_dir}; upload skipped")
+            return
+        sftp.put(path, f"{remote_dir}/{os.path.basename(path)}")
+        ctx.step(f"Uploaded {os.path.basename(path)} to {host}",
+                 stage=Stage.PROCESSING)
+    except Exception as exc:
+        # The cleaned file is on disk either way; a transfer problem should
+        # not throw away a good run.
+        ctx.warn(f"SFTP upload failed: {type(exc).__name__}: {exc}")
+    finally:
+        if transport is not None:
+            transport.close()
+
+
+def run_clean(script_file, source_process, *, break_columns=TOTAL_BREAK,
+              leg="", target_date=None, upload=True,
+              agent_column="Agent ID", login_column="First Login"):
+    """Clean one process's APR export. Returns a process exit code."""
+    started = time.time()
+    if target_date is None:
+        target_date = common.as_date(sys.argv[1]) if len(sys.argv) > 1 else \
+            common.as_date(datetime.today() - timedelta(days=1))
+
+    # Logging and dashboard reporting use this script's own process name
+    # ("GOQII Clean"); the files live under the process it cleans ("GOQII").
+    ctx = start_run(script_file, target_date)
+    paths = common.ProcessPaths(source_process, target_date)
+    handler = CentralErrorHandler(ctx)
+    common.load_env()
+
+    tag = f"[{leg}] " if leg else ""
+    name = f"{paths.date_key}_{leg}{common.REPORT_TAG}" if leg else \
+        f"{paths.date_key}_{common.REPORT_TAG}"
+    source_path = os.path.join(paths.dataset(common.FOLDER_APR_RAW, create=False),
+                               f"{name}.csv")
+    target_dir = paths.dataset(common.FOLDER_APR_CLEAN)
+    csv_path = os.path.join(target_dir, f"{name}.csv")
+    xlsx_path = os.path.join(target_dir, f"{name}.xlsx")
+
+    with ctx.stage_scope(Stage.PROCESSING):
+        try:
+            if not os.path.exists(source_path):
+                ctx.fail(f"{tag}No export to clean: {ctx.relative(source_path)}. "
+                         f"Run the {source_process} scraper for {paths.date_key} first.")
+                ctx.failed()
+                return 1
+            shutil.copy2(source_path, csv_path)
+
+            data = pd.read_csv(csv_path)
+            required = ("Login Duration", agent_column, login_column) \
+                + tuple(break_columns)
+            absent = [c for c in required if c not in data.columns]
+            if absent:
+                ctx.fail(f"{tag}Export is missing column(s): {', '.join(absent)}; "
+                         f"got {list(data.columns)[:10]}")
+                os.remove(csv_path)
+                ctx.failed()
+                return 1
+
+            minutes = data["Login Duration"].apply(time_to_minutes)
+            data["Login Duration (minutes)"] = minutes
+            for column in break_columns:
+                converted = data[column].apply(time_to_minutes)
+                data[f"{column} (minutes)"] = converted
+                minutes = minutes - converted
+            data["Minutes"] = minutes
+            data = data[data["Minutes"] != 0.0]
+            data[agent_column] = data[agent_column].astype(str).str.strip()
+
+            for column in ("##", agent_column):
+                if column in data.columns:
+                    totals = data[data[column].astype(str)
+                                  .str.contains("Total", case=False, na=False)].index
+                    if len(totals):
+                        # Label, not position: the two stop agreeing after the
+                        # filters above.
+                        data = data[data.index < totals[0]]
+
+            data = data[~data.iloc[:, 0].astype(str)
+                        .str.contains("ICAI", case=False, na=False)]
+
+            data[login_column] = pd.to_datetime(data[login_column], errors="coerce") \
+                                   .dt.strftime("%d-%b-%y")
+            data["Minutes"] = np.ceil(data["Minutes"]).astype(int)
+            ctx.step(f"{tag}Net Login added | {len(data)} agent(s)",
+                     stage=Stage.PROCESSING)
+
+            drop = ["Login Duration (minutes)", "Minutes"] + \
+                   [f"{c} (minutes)" for c in break_columns]
+            data.drop(columns=drop, inplace=True, errors="ignore")
+            data.drop(data.columns[0], axis=1, inplace=True)
+
+            # Headerless, as the downstream system expects.
+            data.to_excel(xlsx_path, index=False, header=False)
+            os.remove(csv_path)
+            ctx.step(f"{tag}XLSX created: {os.path.basename(xlsx_path)}",
+                     stage=Stage.PROCESSING)
+            ctx.set_records(scraped=len(data))
+
+            if upload:
+                _upload(ctx, xlsx_path)
+        except Exception as exc:
+            handler.handle(exc, stage=Stage.PROCESSING)
+            for stale in (csv_path,):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            ctx.failed()
+            return 1
+
+    ctx.success(f"{tag}Completed in {time.time() - started:.2f}s")
+    return 0

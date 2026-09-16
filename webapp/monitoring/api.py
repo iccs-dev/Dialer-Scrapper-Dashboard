@@ -451,8 +451,8 @@ def dashboard_matrix(request):
     if (end - start).days > 92:
         return JsonResponse({"error": "range is limited to 92 days"}, status=400)
 
-    processes = list(
-        Process.objects.filter(is_active=True).exclude(kind=ProcessKind.WORKFLOW))
+    processes = list(Process.objects.filter(is_active=True,
+                                            kind=ProcessKind.SCRAPER))
     # `process` is a comma-separated list; empty means every process, which is
     # the previous behaviour.
     selected = [n.strip() for n in (request.GET.get("process") or "").split(",")
@@ -570,8 +570,8 @@ def dashboard_dataset(request):
     if (end - start).days > 92:
         return JsonResponse({"error": "range is limited to 92 days"}, status=400)
 
-    processes = list(
-        Process.objects.filter(is_active=True).exclude(kind=ProcessKind.WORKFLOW))
+    processes = list(Process.objects.filter(is_active=True,
+                                            kind=ProcessKind.SCRAPER))
     selected = [n.strip() for n in (request.GET.get("process") or "").split(",")
                 if n.strip()]
     if selected:

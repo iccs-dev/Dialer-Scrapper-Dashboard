@@ -570,8 +570,15 @@ def dashboard_dataset(request):
     if (end - start).days > 92:
         return JsonResponse({"error": "range is limited to 92 days"}, status=400)
 
-    processes = list(Process.objects.filter(is_active=True,
-                                            kind=ProcessKind.SCRAPER))
+    # APR Clean is produced by the cleaner processes, so the tab reports on
+    # them by name - "GOQII Clean" - the way the scraper tabs report on
+    # scrapers. Each cleaner's roster row already says where its output lands
+    # and what the file is called, so the count comes from that rather than
+    # from a folder guessed from the process name.
+    by_roster = kind == "apr_clean"
+    processes = list(Process.objects.filter(
+        is_active=True,
+        kind=ProcessKind.CLEANER if by_roster else ProcessKind.SCRAPER))
     selected = [n.strip() for n in (request.GET.get("process") or "").split(",")
                 if n.strip()]
     if selected:
@@ -586,9 +593,14 @@ def dashboard_dataset(request):
         already = media_reader.already_processed(current)
         cells = {}
         for process in processes:
-            count = media_reader.dataset_row_count(process.name, current, folder)
+            count = (media_reader.scrape_row_count(process, current) if by_roster
+                     else media_reader.dataset_row_count(process.name, current, folder))
+            # A cleaner's HRMS standing is the source process's, since that is
+            # the workflow the cleaned file belongs to.
+            log_process = (process.output_dir.split("/")[0] if by_roster
+                           and process.output_dir else process.name)
             statuses, _ = media_reader.daily_log_statuses(
-                process.name, current, folder=log_folder)
+                log_process, current, folder=log_folder)
             pushed = (statuses.get("HRMS") == "SUCCESS"
                       or already.get(process.name, 0) > 0)
             if count > 0 and pushed:

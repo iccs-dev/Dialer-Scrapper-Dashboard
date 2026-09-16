@@ -339,3 +339,4 @@ X_FRAME_OPTIONS = "DENY"   # the dashboard never frames itself
 
 # Idle sessions on a kiosk screen should not stay valid forever.
 SESSION_COOKIE_AGE = int(os.getenv("SESSION_COOKIE_AGE", str(12 * 60 * 60)))
+

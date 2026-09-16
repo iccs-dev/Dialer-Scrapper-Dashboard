@@ -230,9 +230,9 @@ except Exception as e:
 # ------------------- Upload XLSX to Server via SFTP ------------------- #
 #import paramiko  # <-- For SFTP upload
 
-server_ip = os.getenv("APR_SFTP_HOST", "172.20.122.231")
-username = os.getenv("APR_SFTP_USERNAME", "iccsadmin")
-password = os.getenv("APR_SFTP_PASSWORD", "Xs0a0@bdpkgo")
+server_ip = os.getenv("APR_SFTP_HOST", "")
+username = os.getenv("APR_SFTP_USERNAME", "")
+password = os.getenv("APR_SFTP_PASSWORD", "")
 sftp_port = int(os.getenv("APR_SFTP_PORT", "22"))
 # The remote folder mirrors the local convention: <base>/<process>. Set
 # APR_SFTP_REMOTE_DIR to override the whole path.

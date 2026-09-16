@@ -1,0 +1,30 @@
+"""IRDAI_Disposition - Disposition Report scraper (Playwright).
+
+Drives the shared flow in core/smart_dial_disposition.py.
+Same dialer as the IRDAI scraper.
+
+    Media/IRDAI/Disposition_data/<Y>/<M>/<D>/<date>.xlsx
+    Media/IRDAI/Clean_disposition/<Y>/<M>/<D>/<date>_Disposition.csv
+
+    python script.py 2026-09-15
+"""
+
+import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
+sys.path.insert(0, PROJECT_ROOT)
+
+from core.smart_dial_disposition import run_disposition
+
+#: The process this report belongs to, so its data and logs land beside that
+#: process's APR output rather than in a folder named after this script.
+OWNING_PROCESS = "IRDAI"
+
+#: Whose SMART_DIAL_* credentials this uses - the dialer, not the folder.
+SETTINGS_PROCESS = "IRDAI"
+
+if __name__ == "__main__":
+    sys.exit(run_disposition(__file__, settings_process=SETTINGS_PROCESS,
+                             process=OWNING_PROCESS))

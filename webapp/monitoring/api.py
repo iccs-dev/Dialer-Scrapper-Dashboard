@@ -451,8 +451,8 @@ def dashboard_matrix(request):
     if (end - start).days > 92:
         return JsonResponse({"error": "range is limited to 92 days"}, status=400)
 
-    processes = list(
-        Process.objects.filter(is_active=True).exclude(kind=ProcessKind.WORKFLOW))
+    processes = list(Process.objects.filter(is_active=True,
+                                            kind=ProcessKind.SCRAPER))
     # `process` is a comma-separated list; empty means every process, which is
     # the previous behaviour.
     selected = [n.strip() for n in (request.GET.get("process") or "").split(",")
@@ -570,14 +570,26 @@ def dashboard_dataset(request):
     if (end - start).days > 92:
         return JsonResponse({"error": "range is limited to 92 days"}, status=400)
 
-    processes = list(
-        Process.objects.filter(is_active=True).exclude(kind=ProcessKind.WORKFLOW))
+    # Both datasets are produced by their own processes, so each tab reports on
+    # those by name - "GOQII Clean", "DMI Disposition" - the way the scraper
+    # tabs report on scrapers. Each roster row already says where its output
+    # lands and what the file is called, so the count comes from that rather
+    # than from a folder guessed from the process name. Listing the scrapers
+    # instead would give a permanently red row to every process that has no
+    # such report at all, which reads as breakage rather than as absence.
+    kinds = {"apr_clean": ProcessKind.CLEANER,
+             "disposition": ProcessKind.DISPOSITION}
+    processes = list(Process.objects.filter(
+        is_active=True, kind=kinds[kind]))
     selected = [n.strip() for n in (request.GET.get("process") or "").split(",")
                 if n.strip()]
     if selected:
         chosen = set(selected)
         processes = [p for p in processes if p.name in chosen]
     names = [p.name for p in processes]
+
+    # Disposition is its own workflow and never reaches HRMS.
+    uploads_to_hrms = kind != "disposition"
 
     rows = []
     totals = {"pushed": 0, "not_pushed": 0, "no_data": 0}
@@ -586,12 +598,26 @@ def dashboard_dataset(request):
         already = media_reader.already_processed(current)
         cells = {}
         for process in processes:
-            count = media_reader.dataset_row_count(process.name, current, folder)
+            # Cleaned APR workbooks are written headerless; counting them the
+            # default way loses the first agent every time. Disposition exports
+            # carry their header, so the same treatment would drop a row.
+            count = media_reader.scrape_row_count(
+                process, current, headerless=(kind == "apr_clean"))
+            # The row's standing belongs to the source process, since that is
+            # the workflow its file belongs to.
+            log_process = (process.output_dir.split("/")[0]
+                           if process.output_dir else process.name)
             statuses, _ = media_reader.daily_log_statuses(
-                process.name, current, folder=log_folder)
-            pushed = (statuses.get("HRMS") == "SUCCESS"
-                      or already.get(process.name, 0) > 0)
-            if count > 0 and pushed:
+                log_process, current, folder=log_folder)
+            if uploads_to_hrms:
+                complete = (statuses.get("HRMS") == "SUCCESS"
+                            or already.get(process.name, 0) > 0)
+            else:
+                # Disposition has no HRMS stage, so there is no second step to
+                # be waiting on: the report existing is the whole job. Starring
+                # every cell would report a gap that does not exist.
+                complete = True
+            if count > 0 and complete:
                 state, key, text = "green", "pushed", str(count)
             elif count > 0:
                 state, key, text = "yellow", "not_pushed", f"{count}*"
@@ -614,5 +640,5 @@ def dashboard_dataset(request):
         "has_data": totals["pushed"] + totals["not_pushed"] > 0,
         # Disposition has no HRMS stage; saying so lets the UI explain a
         # "Pushed to HRMS" card that is legitimately always zero.
-        "uploads_to_hrms": kind != "disposition",
+        "uploads_to_hrms": uploads_to_hrms,
     })

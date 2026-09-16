@@ -43,20 +43,64 @@ def _dated(*parts, date_obj):
     return media_root().joinpath(*parts, *_date_parts(date_obj))
 
 
-def _row_count(path):
-    """Rows in a CSV/XLSX, 0 if absent, -1 if present but unreadable."""
+#: (path, mtime_ns, size, headerless) -> row count. Counting means parsing the
+#: whole workbook, and the Disposition tab does it once per process per date -
+#: 4.5s for a week, and linearly worse over a 92-day range. A file's row count
+#: cannot change without the file changing, so the identity is part of the key
+#: and a rewritten export is never served from here.
+_COUNT_CACHE = {}
+
+#: Enough for a long range across every process, and bounded so a long-running
+#: server cannot grow it without limit.
+_COUNT_CACHE_MAX = 4096
+
+
+def row_count(path, headerless=False):
+    """Rows in a CSV/XLSX, 0 if absent, -1 if present but unreadable.
+
+    `headerless` matters: the cleaned APR workbooks are written with
+    header=False, so reading them the default way spends the first agent row
+    on column names and every count comes out one short.
+    """
+    import io
+
     import pandas as pd
 
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
     if not path.is_file():
         return None
+
+    key = (str(path), stat.st_mtime_ns, stat.st_size, headerless)
+    if key in _COUNT_CACHE:
+        return _COUNT_CACHE[key]
+
+    # 0, not "infer": read_excel rejects the string outright, so every workbook
+    # counted with a header used to come back unreadable. Only the CSV branch
+    # ever worked, which is why the dialer_data tabs never showed it.
+    header = None if headerless else 0
     try:
-        frame = pd.read_csv(path) if path.suffix == ".csv" else pd.read_excel(path)
-        return len(frame)
+        if path.suffix == ".csv":
+            text = path.read_text(encoding="utf-8", errors="replace")
+            # Some exports end with a padding row of bare commas carrying one
+            # field more than the header; pandas rejects the file over it.
+            frame = pd.read_csv(io.StringIO(common.drop_empty_csv_rows(text)),
+                                header=header)
+        else:
+            frame = pd.read_excel(path, header=header)
+        count = len(frame)
     except Exception:
-        return -1
+        count = -1
+
+    if len(_COUNT_CACHE) >= _COUNT_CACHE_MAX:
+        _COUNT_CACHE.clear()
+    _COUNT_CACHE[key] = count
+    return count
 
 
-def scrape_row_count(process, date_obj):
+def scrape_row_count(process, date_obj, headerless=False):
     """Rows this process produced for the date. 0 = missing, -1 = unreadable.
 
     `process` is a monitoring.models.Process; output_dir/file_pattern come
@@ -67,6 +111,18 @@ def scrape_row_count(process, date_obj):
     pattern = process.file_pattern or "{date}_APR.csv"
     folder = _dated(*output_dir.split("/"), date_obj=date_obj)
 
+    # A pattern with a wildcard means the process writes more than one file
+    # for a date - TN CM's cleaner produces a leg each - and the count is the
+    # sum, not whichever one happened to be named in the roster.
+    if "*" in pattern:
+        total, found = 0, False
+        for path in sorted(folder.glob(pattern.format(date=date_str))):
+            count = row_count(path, headerless=headerless)
+            if count is not None and count >= 0:
+                total += count
+                found = True
+        return total if found else 0
+
     primary = folder / pattern.format(date=date_str)
     # A CSV pattern may have an XLSX sibling and vice-versa, as before.
     candidates = [primary]
@@ -76,7 +132,7 @@ def scrape_row_count(process, date_obj):
         candidates.append(primary.with_suffix(".csv"))
 
     for path in candidates:
-        count = _row_count(path)
+        count = row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0
@@ -237,7 +293,7 @@ DATASET_LOG_FOLDERS = {
 }
 
 
-def dataset_row_count(process_name, date_obj, folder):
+def dataset_row_count(process_name, date_obj, folder, headerless=False):
     """Rows in <process>/<folder>/Y/M/D for the date. 0 = nothing, -1 = unreadable.
 
     The file name differs per dataset - "<date>_APR.xlsx" for APR_Clean,
@@ -258,7 +314,7 @@ def dataset_row_count(process_name, date_obj, folder):
         and entry.suffix.lower() in (".csv", ".xlsx", ".xls")
     )
     for path in candidates:
-        count = _row_count(path)
+        count = row_count(path, headerless=headerless)
         if count is not None:
             return count
     return 0

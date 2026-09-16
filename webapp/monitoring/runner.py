@@ -29,6 +29,7 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 
+from . import media_reader
 from .models import Process, ProcessKind, ProcessLog, ProcessRun, Status
 
 #: Runs after the scrapers for a date, builds the HRMS upload file and invokes
@@ -148,15 +149,13 @@ def _run_one(process, run_date, date_args, extra_env=None):
     # Verify the output file, exactly as the Streamlit version did.
     expected = _expected_output(process, run_date)
     produced = next((p for p in expected if p.is_file()), None)
-    rows = 0
-    if produced is not None:
-        try:
-            import pandas as pd
-            frame = pd.read_csv(produced) if produced.suffix == ".csv" \
-                else pd.read_excel(produced)
-            rows = len(frame)
-        except Exception:
-            rows = -1
+    # One reader for the whole app: it knows that read_excel rejects
+    # header="infer" and that some exports end with a padding row pandas
+    # chokes on. Counting them here a third way is how GOQII's disposition
+    # came back as 0 rows while the status tab showed 66.
+    rows = media_reader.row_count(produced) if produced is not None else 0
+    if rows is None:
+        rows = 0
 
     run.completed_at = timezone.now()
     run.records_scraped = max(rows, 0)
@@ -236,7 +235,12 @@ def _orchestrate(scrapers, workflow, dates, names, include_workflow):
             # there is anything worth uploading.
             combine_step = next(
                 (w for w in workflow if w.script_name == WORKFLOW_SCRIPT), None)
-            if combine_step is None and include_workflow and scrapers:
+            # A disposition report is its own workflow and never reaches HRMS,
+            # so running only those must not close out the date: combine.py
+            # would build an upload from whatever APR data already happened to
+            # be on disk and push it, which nobody asked for.
+            feeds_hrms = [p for p in scrapers if p.kind != ProcessKind.DISPOSITION]
+            if combine_step is None and include_workflow and feeds_hrms:
                 combine_step = _workflow_step()
                 if combine_step is None:
                     logger.warning(

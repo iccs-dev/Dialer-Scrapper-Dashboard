@@ -30,9 +30,18 @@ def dashboard(request):
     for process in processes:
         categories.setdefault(process.category or "Other", []).append(process)
 
+    # The two dataset tabs report on their own producers, so their Process
+    # filters list those rather than the whole roster. Offering every process
+    # there let someone tick an APR scraper in the Disposition filter and get
+    # an empty table, which reads as missing data rather than a wrong filter.
+    def by_kind(kind):
+        return [p for p in processes if p.kind == kind]
+
     yesterday = timezone.localdate() - timedelta(days=1)
     return render(request, "monitoring/dashboard.html", {
         "categories": sorted(categories.items()),
+        "cleaners": by_kind(ProcessKind.CLEANER),
+        "dispositions": by_kind(ProcessKind.DISPOSITION),
         "process_count": processes.count(),
         "active_count": processes.filter(is_active=True).count(),
         "yesterday": yesterday.isoformat(),

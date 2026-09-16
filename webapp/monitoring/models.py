@@ -57,6 +57,15 @@ class ProcessKind(models.TextChoices):
     """
 
     SCRAPER = "SCRAPER", "Scraper"
+    #: Runs after a scraper and rewrites its export into APR_Clean. Runnable
+    #: and visible like any process, but it reports on the source process's
+    #: folder, so it gets no column of its own in the status tabs.
+    CLEANER = "CLEANER", "APR cleaner"
+    #: Scrapes a dialer's Disposition Report. Runnable and visible like any
+    #: process, but it writes into the source process's folder rather than a
+    #: folder of its own, so - like a cleaner - it gets no column in the
+    #: scraper status tabs and is reported on by the Disposition Status tab.
+    DISPOSITION = "DISPOSITION", "Disposition scraper"
     WORKFLOW = "WORKFLOW", "Workflow step"
 
 

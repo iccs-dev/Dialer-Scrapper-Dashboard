@@ -599,9 +599,10 @@
       note.innerHTML = data.uploads_to_hrms
         ? "<code>N</code> = rows present and pushed to HRMS &nbsp;|&nbsp; " +
           "<code>N*</code> = rows present, not in HRMS &nbsp;|&nbsp; empty red = no data"
-        : "<code>N*</code> = rows present &nbsp;|&nbsp; empty red = no data. " +
-          "Disposition is a separate report and is never uploaded to HRMS, so " +
-          "<b>Pushed to HRMS</b> stays at zero for this dataset.";
+        : "<code>N</code> = rows in the saved report &nbsp;|&nbsp; " +
+          "empty red = no report for that date. Disposition is its own report " +
+          "and never goes to HRMS, so saving it is the whole job and " +
+          "<b>Incomplete</b> stays at zero.";
     }
 
     function load() {

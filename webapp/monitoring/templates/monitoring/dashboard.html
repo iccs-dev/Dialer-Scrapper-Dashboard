@@ -219,14 +219,13 @@
                 <button type="button" class="link" data-msel-none="apr-clean">Clear</button>
               </div>
               <div class="msel-list">
-                {% for category, items in categories %}
-                <div class="msel-group">{{ category }}</div>
-                {% for p in items %}
+                {% for p in cleaners %}
                 <label class="msel-item {% if not p.is_active %}unavailable{% endif %}">
                   <input type="checkbox" class="apr-clean-proc" value="{{ p.name }}">
                   <span>{{ p.name }}</span>
                 </label>
-                {% endfor %}
+                {% empty %}
+                <div class="muted" style="padding:8px">No processes registered.</div>
                 {% endfor %}
               </div>
             </div>
@@ -266,14 +265,13 @@
                 <button type="button" class="link" data-msel-none="disposition">Clear</button>
               </div>
               <div class="msel-list">
-                {% for category, items in categories %}
-                <div class="msel-group">{{ category }}</div>
-                {% for p in items %}
+                {% for p in dispositions %}
                 <label class="msel-item {% if not p.is_active %}unavailable{% endif %}">
                   <input type="checkbox" class="disposition-proc" value="{{ p.name }}">
                   <span>{{ p.name }}</span>
                 </label>
-                {% endfor %}
+                {% empty %}
+                <div class="muted" style="padding:8px">No processes registered.</div>
                 {% endfor %}
               </div>
             </div>
@@ -283,8 +281,8 @@
 
       <div class="metrics">
         <div class="metric m-info"><div class="metric-label">Dates</div><div class="metric-value" id="disposition-dates">0</div></div>
-        <div class="metric m-ok"><div class="metric-label">Pushed to HRMS</div><div class="metric-value ok" id="disposition-pushed">0</div></div>
-        <div class="metric m-warn"><div class="metric-label">Not in HRMS</div><div class="metric-value warn" id="disposition-notpushed">0</div></div>
+        <div class="metric m-ok"><div class="metric-label">Reports Saved</div><div class="metric-value ok" id="disposition-pushed">0</div></div>
+        <div class="metric m-warn"><div class="metric-label">Incomplete</div><div class="metric-value warn" id="disposition-notpushed">0</div></div>
         <div class="metric m-bad"><div class="metric-label">No Data</div><div class="metric-value bad" id="disposition-nodata">0</div></div>
       </div>
 

@@ -30,9 +30,34 @@ SCRAPER_GLOBS = ("Scrapper/*/*/script.py", "Scrapper/*/*/*_Disposition.py")
 #: Per-process ceiling. A hung dialer must not block the rest of the night.
 DEFAULT_TIMEOUT_SECONDS = 1800
 
+#: A cleaner reads what a scraper just wrote, so it has to run afterwards.
+#: Sorted by path, "Amazon Merchant Clean" precedes "Amazon Merchant", which
+#: would have every cleaner fail nightly with nothing to clean. Detected by
+#: what the script imports rather than by folder name, so a renamed folder
+#: cannot quietly put it back in the wrong phase.
+CLEANER_MARKER = "core.apr_clean"
+PHASE_SCRAPE, PHASE_CLEAN = "scrape", "clean"
+
+
+def phase_of(path):
+    """Which phase a job belongs to: everything scrapes before anything cleans.
+
+    The whole folder is examined, not just this file: a multi-leg cleaner's
+    script.py only launches its legs, so the import that identifies it lives
+    in a sibling.
+    """
+    for candidate in sorted(path.parent.glob("*.py")):
+        try:
+            if CLEANER_MARKER in candidate.read_text(encoding="utf-8",
+                                                     errors="ignore"):
+                return PHASE_CLEAN
+        except OSError:
+            continue
+    return PHASE_SCRAPE
+
 
 def discover(only=None):
-    """[(label, path)] for every scraper job in the project.
+    """[(label, path)] for every job in the project, scrapers before cleaners.
 
     The label is the process for its main scraper, and "<process>/<report>"
     for an extra report, so two jobs of the same process stay distinguishable
@@ -48,7 +73,9 @@ def discover(only=None):
             if only and not {process.lower(), label.lower()} & {n.lower() for n in only}:
                 continue
             found[str(path)] = (label, path)
-    return [found[k] for k in sorted(found)]
+    jobs = [found[k] for k in sorted(found)]
+    # Stable within a phase, scrapers first across phases.
+    return sorted(jobs, key=lambda job: phase_of(job[1]) == PHASE_CLEAN)
 
 
 def run_one(label, script, date_key, timeout):
@@ -103,7 +130,8 @@ def main():
     scrapers = discover(args.only)
     if args.list:
         for label, path in scrapers:
-            print(f"  {label:22} {path.relative_to(common.CODE_ROOT)}")
+            print(f"  {phase_of(path):6} {label:22} "
+                  f"{path.relative_to(common.CODE_ROOT)}")
         return 0
     if not scrapers:
         print(f"No scrapers matched {SCRAPER_GLOBS}"
@@ -115,7 +143,11 @@ def main():
              + ", ".join(label for label, _ in scrapers))
 
     results = []
+    phase = None
     for label, script in scrapers:
+        if phase_of(script) != phase:
+            phase = phase_of(script)
+            ctx.info(f"===== {phase.upper()} =====", stage=Stage.SCRAPING)
         ctx.info(f"--- {label} ---", stage=Stage.SCRAPING)
         outcome = run_one(label, script, date_key, args.timeout)
         results.append(outcome)

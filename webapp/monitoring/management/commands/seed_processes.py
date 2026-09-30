@@ -18,8 +18,17 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from monitoring.management.commands.seed_cleaners import MANAGED as CLEANERS
 from monitoring.management.commands.seed_dispositions import SUPERSEDED
 from monitoring.models import Process, ScheduleType
+
+#: Rows this command must not touch, because a dedicated seeder owns their
+#: kind, output_dir and file_pattern. dashboard.py describes them as ordinary
+#: scrapers writing "<name>/dialer_data", which is wrong for both: a cleaner
+#: writes "<source>/APR_Clean" and a disposition report is not a scraper at
+#: all. Upserting them here reverted those corrections every time this ran and
+#: silently emptied the APR Clean Status tab.
+OWNED_ELSEWHERE = set(CLEANERS) | set(SUPERSEDED)
 
 
 class Command(BaseCommand):
@@ -44,11 +53,7 @@ class Command(BaseCommand):
         root = Path(settings.PROJECT_ROOT)
         created = updated = inactive = skipped = 0
         for name, info in meta.items():
-            # dashboard.py still lists the Disposition reports under folder
-            # names that never existed. seed_dispositions registers the real
-            # ones, so recreating these here would put every disposition in
-            # the sidebar twice - once live, once dead.
-            if name in SUPERSEDED:
+            if name in OWNED_ELSEWHERE:
                 skipped += 1
                 continue
             working_dir = self._relative(info["cwd"], root)
@@ -77,7 +82,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"roster: {len(meta)} processes | created {created} | updated {updated} "
             f"| inactive (script missing) {inactive} "
-            f"| skipped (registered by seed_dispositions) {skipped}"
+            f"| skipped (owned by seed_cleaners/seed_dispositions) {skipped}"
         ))
 
     @staticmethod

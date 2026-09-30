@@ -115,8 +115,13 @@ echo "==> Preparing the monitoring dashboard"
   cd "$PROJECT_ROOT/webapp"
   "$VENV_DIR/bin/python" manage.py migrate --no-input
   # The roster comes from the existing process list; workflow steps are what
-  # let combine.py and hrms.py report in.
+  # let combine.py and hrms.py report in. The cleaners and disposition
+  # scrapers need their own seeders: seed_processes cannot tell what kind they
+  # are or whose Media folder they write to, so without these two the APR
+  # Clean and Disposition Status tabs come up empty on a fresh install.
   "$VENV_DIR/bin/python" manage.py seed_processes
+  "$VENV_DIR/bin/python" manage.py seed_cleaners
+  "$VENV_DIR/bin/python" manage.py seed_dispositions
   "$VENV_DIR/bin/python" manage.py seed_workflow
   "$VENV_DIR/bin/python" manage.py collectstatic --no-input >/dev/null
   echo "   static files collected"

@@ -39,7 +39,7 @@ services:
     ports:
       # Loopback only. Nginx on the host is the front door, exactly as it is
       # for the non-container deployment - deploy/nginx already proxies here.
-      - "127.0.0.1:8001:8001"
+      - "8001:8001"
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

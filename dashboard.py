@@ -640,7 +640,7 @@ MONITOR_PROCESSES = ["ICAI",
                      "TN CM_Clean",
                     #  "TN CM_Disposition_a",
                     #  "TN CM_Disposition_b",
-                     "TN CM_Clean",
+                     
                      "Amazon Merchant",
                      "Amazon Merchant Clean", 
                      "NHA", 

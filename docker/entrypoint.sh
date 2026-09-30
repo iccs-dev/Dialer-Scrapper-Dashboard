@@ -28,7 +28,12 @@ PY
     echo "==> migrate"
     python manage.py migrate --no-input
     echo "==> roster"
+    # seed_cleaners and seed_dispositions are not optional: seed_processes
+    # cannot derive a process's kind or its Media folder from dashboard.py, so
+    # skipping them leaves the APR Clean and Disposition Status tabs empty.
     python manage.py seed_processes
+    python manage.py seed_cleaners
+    python manage.py seed_dispositions
     python manage.py seed_workflow
     echo "==> static"
     python manage.py collectstatic --no-input >/dev/null

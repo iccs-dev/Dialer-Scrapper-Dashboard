@@ -57,11 +57,28 @@ CLEANERS = [
      "DMI",             "{date}_bAPR.xlsx"),
     ("TN CM_Clean",           "Scrapper/Smart_Dial/TN CM_Clean",
      "TN CM",           "{date}_*APR.xlsx"),
+    # Edelweiss: leg a = Hyderabad, leg b = Chennai, one workbook each.
+    ("Edelweiss Clean_a",     "Scrapper/Convox/Edelweiss Clean_a",
+     "Edelweiss",       "{date}_aAPR.xlsx"),
+    ("Edelweiss Clean_b",     "Scrapper/Convox/Edelweiss Clean_b",
+     "Edelweiss",       "{date}_bAPR.xlsx"),
 ]
 
 #: Names seed_processes must leave alone, because this command owns their
 #: kind, output_dir and file_pattern. Imported there rather than duplicated.
 MANAGED = [name for name, _folder, _source, _pattern in CLEANERS]
+
+#: Roster names that no longer exist. update_or_create never removes a row, so
+#: without this a renamed cleaner lingers in the dashboard's process list.
+#: "Edelweiss Clean" (one combined workbook) briefly replaced Clean_a/_b on
+#: 2026-11-24 and was withdrawn the same day.
+RETIRED = ["Edelweiss Clean"]
+
+
+def _category(working_dir):
+    """Scrapper/<Category>/<Process> -> <Category>, e.g. "Convox"."""
+    parts = Path(working_dir).parts
+    return parts[1] if len(parts) > 2 and parts[0] == "Scrapper" else "Smart_Dial"
 
 
 class Command(BaseCommand):
@@ -78,7 +95,7 @@ class Command(BaseCommand):
             exists = (root / working_dir / "script.py").is_file()
             missing += not exists
             defaults = {
-                "category": "Smart_Dial",
+                "category": _category(working_dir),
                 "kind": ProcessKind.CLEANER,
                 "working_dir": working_dir,
                 "script_name": "script.py",
@@ -98,7 +115,17 @@ class Command(BaseCommand):
             created += was_created
             updated += not was_created
 
+        removed = 0
+        for process in Process.objects.filter(name__in=RETIRED):
+            runs = process.runs.count()
+            if options["dry_run"]:
+                self.stdout.write(f"  would remove {process.name} ({runs} run(s) of history)")
+                continue
+            process.delete()   # cascades to its ProcessRun / ProcessLog rows
+            removed += 1
+            self.stdout.write(f"  removed retired {process.name} ({runs} run(s) of history)")
+
         self.stdout.write(self.style.SUCCESS(
             f"cleaners: {len(CLEANERS)} | created {created} | "
-            f"updated {updated} | script missing {missing}"
+            f"updated {updated} | removed {removed} | script missing {missing}"
         ))

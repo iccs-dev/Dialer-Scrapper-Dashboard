@@ -119,10 +119,16 @@ def _run_one(process, run_date, date_args, extra_env=None):
     _log(run, f"START {process.name} {' '.join(date_args) or '(yesterday)'}")
 
     try:
+        # UTF-8 on both ends. Left to the platform, Windows writes the child's
+        # output in one code page and reads it back in cp1252, and the first
+        # character outside it (a dialer's "—", an agent's name) kills the
+        # reader thread and loses the run's log.
         completed = subprocess.run(
-            command, cwd=str(script.parent), capture_output=True, text=True,
+            command, cwd=str(script.parent), capture_output=True,
+            encoding="utf-8", errors="replace",
             timeout=settings.RUN_TIMEOUT_SECONDS,
-            env={**os.environ, "DIALER_RUN_ID": run_id, **(extra_env or {})},
+            env={**os.environ, "PYTHONIOENCODING": "utf-8",
+                 "DIALER_RUN_ID": run_id, **(extra_env or {})},
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         for line in output.splitlines():
